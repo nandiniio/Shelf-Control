@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+
+<title>Reading List</title>
+
+<link rel="stylesheet" href="style.css">
+
+</head>
+
+<body>
+
+    <div class="page-wrapper">
+<nav class="navbar">
+
+<h2 onclick="location.href='landing.html'">Shelf Control</h2>
+
+<div class="nav-right">
+
+<a href="about.html" class="nav-btn about-btn">
+About
+</a>
+
+<a href="addbook.html" class="plus-btn">
++
+</a>
+
+<a href="settings.html" class="settings-btn">
+⚙
+</a>
+
+</div>
+
+</nav>
+
+<div class="content">
+
+<h1 id="listTitle"></h1>
+
+<div id="bookContainer"></div>
+
+</div>
+
+<script src="script.js"></script>
+
+<div id="bookModal" class="modal">
+
+<div class="modal-content">
+
+<span class="close-btn">&times;</span>
+
+<img id="modalImage">
+
+<h2 id="modalTitle"></h2>
+
+<p id="modalAuthor"></p>
+
+<p id="modalStatus"></p>
+
+<p id="modalReview"></p>
+
+</div>
+
+</div>
+    </div>
+
+<footer class="footer">
+
+<p>March 2026 • All Rights Reserved</p>
+
+<div class="footer-links">
+
+<a href="landing.html">Home</a> |
+<a href="about.html">About</a> |
+<a href="list.html?status=Completed">Completed</a> |
+<a href="list.html?status=In-progress">In-progress</a> |
+<a href="list.html?status=To be read">TBR</a>
+
+</div>
+</body>
+
+</html>

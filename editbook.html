@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+<title>Edit Book</title>
+
+<link rel="stylesheet" href="style.css">
+
+<link href="https://fonts.googleapis.com/css2?family=Poppins&display=swap" rel="stylesheet">
+
+</head>
+
+<body class="form-page">
+
+
+<!-- FORM -->
+<div class="form-container">
+
+<h1>Edit Book</h1>
+
+<form id="editBookForm">
+
+<input type="text" id="title" placeholder="Title">
+
+<input type="text" id="author" placeholder="Author">
+
+<input type="text" id="image" placeholder="Image URL">
+
+<textarea id="review" placeholder="Review"></textarea>
+
+<select id="listSelect">
+<option value="">Genre</option>
+<option value="Fantasy">Fantasy</option>
+<option value="Self Help">Self Help</option>
+<option value="Science Fiction">Science Fiction</option>
+<option value="Sad">Sad</option>
+<option value="Romance">Romance</option>
+<option value="Thriller">Thriller</option>
+</select>
+
+<select id="status">
+<option value="">Reading Status</option>
+<option value="In-progress">In-progress</option>
+<option value="Completed">Completed</option>
+<option value="TBR">TBR</option>
+</select>
+
+<button type="submit">Update Book</button>
+
+</form>
+
+<a class="back-link" href="landing.html">Back to Library</a>
+
+</div>
+
+<script src="script.js"></script>
+
+</body>
+</html>

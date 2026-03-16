@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+<meta charset="UTF-8">
+<title>Shelf Control</title>
+
+<link rel="stylesheet" href="style.css">
+
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap" rel="stylesheet">
+
+<link rel="stylesheet"
+href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+
+
+</head>
+
+<body class="landingpage">
+
+    <div class="page-wrapper">
+
+<!-- NAVBAR -->
+
+<nav class="navbar">
+
+<div class="nav-left">
+<h2 onclick="location.reload()">Shelf Control</h2>
+</div>
+
+<div class="nav-right">
+
+<a href="about.html" class="nav-btn about-btn">
+About
+</a>
+
+<a href="addbook.html" class="plus-btn">
++
+</a>
+
+<a href="settings.html" class="settings-btn">
+⚙
+</a>
+
+</div>
+
+</div>
+
+</nav>
+
+<!-- MAIN APP LAYOUT -->
+
+<div class="app-layout">
+
+<!-- MAIN CONTENT -->
+
+<main class="content">
+
+
+<section id="reading-lists">
+
+<h1>Reading Lists</h1>
+
+<div class="lists-container">
+
+
+</div>
+</section>
+<section id="completed">
+
+<h1>Other Lists</h1>
+
+<div class="lists-container">
+
+<div class="list-card" onclick="openStatusList('Completed')">
+Completed
+</div>
+
+<div class="list-card" onclick="openStatusList('In-progress')">
+In-progress
+</div>
+
+<div class="list-card" onclick="openStatusList('To be read')">
+TBR
+</div>
+
+</div>
+
+</section>
+
+
+</main>
+
+</div>
+
+</div>
+
+<!-- FOOTER -->
+
+<footer class="footer">
+
+<p>March 2026 • All Rights Reserved</p>
+
+<div class="footer-links">
+
+<a href="landing.html">Home</a> |
+<a href="about.html">About</a> |
+<a href="list.html?status=Completed">Completed</a> |
+<a href="list.html?status=In-progress">In-progress</a> |
+<a href="list.html?status=To be read">TBR</a>
+
+
+</div>
+
+</div>
+
+</footer>
+
+<div id="toast"></div>
+<script src="script.js"></script>
+
+</body>
+</html>

@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+
+<title>Add Book</title>
+
+<link rel="stylesheet" href="style.css">
+
+</head>
+
+<body class="form-page">
+
+<div class="form-container">
+
+<h1>Add Book</h1>
+
+<form id="bookForm">
+
+<input type="text" id="title" placeholder="Book Title" required>
+
+<input type="text" id="author" placeholder="Author" required>
+
+<select id="listSelect">
+<option value="">Genre</option>
+<option value="Fantasy">Fantasy</option>
+<option value="Self Help">Self Help</option>
+<option value="Science Fiction">Science Fiction</option>
+<option value="Sad">Sad</option>
+<option value="Romance">Romance</option>
+<option value="Thriller">Thriller</option>
+</select>
+
+<select id="status">
+<option value="">Reading Status</option>
+<option value="To be read">To be read</option>
+<option value="In-progress">In-progress</option>
+<option value="Completed">Completed</option>
+</select>
+
+<input type="text" id="image" placeholder="Image URL">
+
+<textarea id="review" placeholder="A few words..."></textarea>
+
+<button type="submit">Add Book</button>
+
+</form>
+
+<a href="landing.html">
+<button>Back to Library</button>
+</a>
+
+</div>
+
+<div id="toast"></div>
+<script src="script.js"></script>
+</body>
+
+</html>
+
