@@ -12,7 +12,7 @@ const password = document.getElementById("password").value;
 
 try {
 
-const response = await fetch("http://localhost:3000/signup", {
+const response = await fetch("https://shelf-control-dgex.onrender.com/signup", {
 
 method: "POST",
 headers: {

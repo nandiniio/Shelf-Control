@@ -6,7 +6,9 @@ console.log("Login clicked");
 const email = document.getElementById("email").value;
 const password = document.getElementById("password").value;
 
-const response = await fetch("http://localhost:3000/login",{
+// fetch("https://shelf-control-dgex.onrender.com/login")
+
+const response = await fetch("https://shelf-control-dgex.onrender.com/login",{
 
 method: "POST",
 headers: {
