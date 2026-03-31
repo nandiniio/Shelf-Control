@@ -1,3 +1,6 @@
+app.get("/", (req, res) => {
+  res.send("Backend is running 🚀");
+});
 
 const BASE_URL = "https://shelf-control-dgex.onrender.com";
 fetch(`${BASE_URL}/login`)
