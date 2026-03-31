@@ -1,4 +1,4 @@
-const mongoose = require("mongoose");
+import mongoose from "mongoose";
 
 const bookSchema = new mongoose.Schema({
   title: String,
@@ -11,10 +11,10 @@ const bookSchema = new mongoose.Schema({
     default: Date.now
   },
   review: {
-  type: String,
-  default: ""
-}, 
-userId: String 
+    type: String,
+    default: ""
+  },
+  userId: String
 });
 
-module.exports = mongoose.model("Book", bookSchema);
+export default mongoose.model("Book", bookSchema);
