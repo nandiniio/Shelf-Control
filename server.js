@@ -27,6 +27,17 @@ app.get("/", (req, res) => {
 app.use(cors());
 app.use(express.json());
 
+//serve frontend
+const path = require("path");
+
+// serve static files
+app.use(express.static(__dirname));
+
+// show index.html on "/"
+app.get("/", (req, res) => {
+  res.sendFile(path.join(__dirname, "index.html"));
+});
+
 // DB connection
 mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log("MongoDB connected"))
