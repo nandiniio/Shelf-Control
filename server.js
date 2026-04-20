@@ -1,6 +1,6 @@
-app.get("/", (req, res) => {
-  res.send("Backend is running 🚀");
-});
+// app.get("/", (req, res) => {
+//   res.send("Backend is running 🚀");
+// });
 
 const BASE_URL = "https://shelf-control-dgex.onrender.com";
 fetch(`${BASE_URL}/login`)
@@ -20,7 +20,9 @@ import User from "./models/User.js";
 console.log("MONGO:", process.env.MONGO_URI);
 
 const app = express();
-
+app.get("/", (req, res) => {
+  res.send("Backend is running 🚀");
+});
 // middleware
 app.use(cors());
 app.use(express.json());
