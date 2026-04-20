@@ -42,11 +42,11 @@ app.post("/login", async (req, res) => {
   const { email, password } = req.body;
 
   try {
-    console.log("LOGIN BODY:", req.body); // 👈 ADD THIS
+    console.log("LOGIN BODY:", req.body); 
 
     const user = await User.findOne({ email });
 
-    console.log("FOUND USER:", user); // 👈 ADD THIS
+    console.log("FOUND USER:", user); 
 
     if (!user) {
       return res.json({ message: "User not found" });
@@ -64,7 +64,7 @@ app.post("/login", async (req, res) => {
     });
 
   } catch (error) {
-    console.log("LOGIN ERROR:", error); // 👈 ADD THIS
+    console.log("LOGIN ERROR:", error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -72,7 +72,7 @@ app.post("/login", async (req, res) => {
 const email = document.getElementById("email").value;
 const password = document.getElementById("password").value;
 
-fetch("http://localhost:3000/login", {
+fetch("https://shelf-control-dgex.onrender.com/login", {
   method: "POST",
   headers: {
     "Content-Type": "application/json"
@@ -97,7 +97,7 @@ document.querySelector("form").addEventListener("submit", async (e) => {
 
   console.log("Sending:", email, password); // debug
 
-  const res = await fetch("http://localhost:3000/login", {
+  const res = await fetch("https://shelf-control-dgex.onrender.com/login", {
     method: "POST",
     headers: {
       "Content-Type": "application/json"
