@@ -118,3 +118,6 @@ document.querySelector("form").addEventListener("submit", async (e) => {
     window.location.href = "index.html";
   }
 });
+
+console.log("LOGIN BODY:", req.body);
+console.log("FOUND USER:", user);
