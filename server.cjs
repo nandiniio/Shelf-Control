@@ -7,14 +7,38 @@
 // fetch(`${BASE_URL}/signup`)
 // fetch(`${BASE_URL}/books`)
 
+// const express = require("express");
+// const mongoose = require("mongoose");
+// const cors = require("cors");
+// const dotenv = require("dotenv");
+// dotenv.config();
+// const Book = require("./models/Book");
+// const User = require("./models/User");
+
 const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
 const dotenv = require("dotenv");
-dotenv.config();
+const path = require("path");
+
 const Book = require("./models/Book");
 const User = require("./models/User");
 
+dotenv.config();
+
+// ✅ CREATE APP HERE
+const app = express();
+
+// middleware
+app.use(cors());
+app.use(express.json());
+
+// serve frontend
+app.use(express.static(__dirname));
+
+app.get("/", (req, res) => {
+  res.sendFile(path.join(__dirname, "index.html"));
+});
 
 // console.log("TEST:", process.env.TEST_VAR);
 console.log("MONGO:", process.env.MONGO_URI);
@@ -29,14 +53,6 @@ app.use(express.json());
 
 //serve frontend
 const path = require("path");
-
-// serve static files
-app.use(express.static(__dirname));
-
-// show index.html on "/"
-app.get("/", (req, res) => {
-  res.sendFile(path.join(__dirname, "index.html"));
-});
 
 // DB connection
 mongoose.connect(process.env.MONGO_URI)
