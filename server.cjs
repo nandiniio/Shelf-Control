@@ -1,20 +1,3 @@
-// app.get("/", (req, res) => {
-//   res.send("Backend is running 🚀");
-// });
-
-// const BASE_URL = "https://shelf-control-dgex.onrender.com";
-// fetch(`${BASE_URL}/login`)
-// fetch(`${BASE_URL}/signup`)
-// fetch(`${BASE_URL}/books`)
-
-// const express = require("express");
-// const mongoose = require("mongoose");
-// const cors = require("cors");
-// const dotenv = require("dotenv");
-// dotenv.config();
-// const Book = require("./models/Book");
-// const User = require("./models/User");
-
 const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
@@ -26,33 +9,18 @@ const User = require("./models/User");
 
 dotenv.config();
 
-// ✅ CREATE APP HERE
 const app = express();
 
-// middleware
+// Middleware
 app.use(cors());
 app.use(express.json());
 
-// serve frontend
+// Serve frontend
 app.use(express.static(__dirname));
 
 app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "index.html"));
 });
-
-// console.log("TEST:", process.env.TEST_VAR);
-console.log("MONGO:", process.env.MONGO_URI);
-
-// const app = express();
-// app.get("/", (req, res) => {
-//   res.send("Backend is running 🚀");
-// });
-// middleware
-app.use(cors());
-app.use(express.json());
-
-//serve frontend
-const path = require("path");
 
 // DB connection
 mongoose.connect(process.env.MONGO_URI)
@@ -112,8 +80,6 @@ app.delete("/books/:id", async (req, res) => {
 // SIGNUP
 app.post("/signup", async (req, res) => {
   try {
-    console.log("SIGNUP BODY:", req.body);
-
     const { username, email, password } = req.body;
 
     if (!username || !email || !password) {
@@ -140,8 +106,6 @@ app.post("/signup", async (req, res) => {
 // LOGIN
 app.post("/login", async (req, res) => {
   try {
-    console.log("LOGIN BODY:", req.body);
-
     const { email, password } = req.body;
 
     if (!email || !password) {
@@ -149,8 +113,6 @@ app.post("/login", async (req, res) => {
     }
 
     const user = await User.findOne({ email });
-
-    console.log("FOUND USER:", user);
 
     if (!user) {
       return res.json({ message: "User not found" });
@@ -173,7 +135,7 @@ app.post("/login", async (req, res) => {
   }
 });
 
-// server
+// Server
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
