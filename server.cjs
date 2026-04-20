@@ -2,27 +2,27 @@
 //   res.send("Backend is running 🚀");
 // });
 
-const BASE_URL = "https://shelf-control-dgex.onrender.com";
-fetch(`${BASE_URL}/login`)
-fetch(`${BASE_URL}/signup`)
-fetch(`${BASE_URL}/books`)
+// const BASE_URL = "https://shelf-control-dgex.onrender.com";
+// fetch(`${BASE_URL}/login`)
+// fetch(`${BASE_URL}/signup`)
+// fetch(`${BASE_URL}/books`)
 
-import express from "express";
-import mongoose from "mongoose";
-import cors from "cors";
-import dotenv from "dotenv";
+const express = require("express");
+const mongoose = require("mongoose");
+const cors = require("cors");
+const dotenv = require("dotenv");
 dotenv.config();
+const Book = require("./models/Book");
+const User = require("./models/User");
 
-import Book from "./models/Book.js";
-import User from "./models/User.js";
 
 // console.log("TEST:", process.env.TEST_VAR);
 console.log("MONGO:", process.env.MONGO_URI);
 
-const app = express();
-app.get("/", (req, res) => {
-  res.send("Backend is running 🚀");
-});
+// const app = express();
+// app.get("/", (req, res) => {
+//   res.send("Backend is running 🚀");
+// });
 // middleware
 app.use(cors());
 app.use(express.json());
@@ -158,6 +158,8 @@ app.post("/login", async (req, res) => {
 });
 
 // server
-app.listen(3000, () => {
-  console.log("Server running on port 3000");
+const PORT = process.env.PORT || 3000;
+
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
 });
