@@ -1,0 +1,647 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Shelf Control — because your books won't control themselves</title>
+  <!-- Google Fonts for Editorial and Modern Sans Look -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Playfair+Display:ital,wght@0,400..900;1,400..900&display=swap" rel="stylesheet">
+  <!-- CSS Variables & Stylings -->
+  <link rel="stylesheet" href="/style.css">
+  <!-- Lucide Icons via CDN for clean, Apple/Spotify style iconography -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body>
+
+  <!-- Dynamic Fluid Background Blobs for Glassmorphism -->
+  <div class="bg-blobs">
+    <div class="blob blob-1"></div>
+    <div class="blob blob-2"></div>
+    <div class="blob blob-3"></div>
+  </div>
+
+  <!-- ONBOARDING / SIGNUP SCREEN -->
+  <div id="onboarding-screen" class="screen onboarding-active">
+    <div class="onboarding-container glass">
+      <div class="brand">
+        <div class="logo-mark">
+          <i data-lucide="library" class="logo-icon"></i>
+        </div>
+        <h1 class="app-title">Shelf Control</h1>
+        <p class="tagline">because your books won't control themselves</p>
+      </div>
+
+      <form id="signup-form" class="signup-form">
+        <div class="form-group">
+          <label for="signup-name">What should we call you?</label>
+          <input type="text" id="signup-name" placeholder="Enter your name" required autocomplete="off">
+        </div>
+
+        <div class="form-group-row">
+          <div class="form-group">
+            <label for="signup-goal">Annual Goal</label>
+            <input type="number" id="signup-goal" placeholder="e.g. 12" min="1" required>
+          </div>
+
+          <div class="form-group">
+            <label for="signup-genre">Favorite Genre</label>
+            <select id="signup-genre" required>
+              <option value="" disabled selected>Genre</option>
+              <option value="Fiction">Fiction</option>
+              <option value="Sci-Fi">Sci-Fi</option>
+              <option value="Self-Improvement">Self-Improvement</option>
+              <option value="Biographies">Biographies</option>
+              <option value="Mystery">Mystery</option>
+              <option value="History">History</option>
+              <option value="Romance">Romance</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>Library Setup</label>
+          <div class="library-options-row">
+            <label class="lib-radio-option">
+              <input type="radio" name="signup-library-option" value="sample" checked>
+              <div class="lib-radio-card">
+                <i data-lucide="library"></i>
+                <span class="lib-radio-title">Sample Library</span>
+                <span class="lib-radio-desc">Get seed recommendations</span>
+              </div>
+            </label>
+            <label class="lib-radio-option">
+              <input type="radio" name="signup-library-option" value="clean">
+              <div class="lib-radio-card">
+                <i data-lucide="folder-open"></i>
+                <span class="lib-radio-title">Clean Slate</span>
+                <span class="lib-radio-desc">Start empty list from scratch</span>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        <button type="submit" class="btn-primary animate-btn">
+          <span>Start My Shelves</span>
+          <i data-lucide="arrow-right"></i>
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- MAIN APP CONTAINER -->
+  <div id="app-container" class="app-hidden">
+    <!-- Main Scrollable Screen Content -->
+    <main class="content-viewport">
+      
+      <!-- HEADER -->
+      <header class="app-header">
+        <div class="header-left">
+          <span class="welcome-text">Happy reading,</span>
+          <h2 id="header-username" class="username-display">Reader</h2>
+        </div>
+        <div class="header-right">
+          <!-- Dark Mode Toggle Button -->
+          <button id="btn-theme-toggle" class="btn-theme-toggle animate-btn" title="Toggle Dark/Light Mode">
+            <i data-lucide="moon" class="theme-toggle-icon"></i>
+          </button>
+          <div class="header-logo">
+            <span class="logo-text">Shelf Control</span>
+            <i data-lucide="library" class="header-logo-icon"></i>
+          </div>
+        </div>
+      </header>
+
+      <!-- HOME VIEW -->
+      <section id="view-home" class="app-view view-active">
+        <div class="home-top-bar">
+          <h1 class="view-title">My Library</h1>
+          <div class="action-buttons">
+            <button id="btn-create-list" class="btn-secondary flex-btn animate-btn">
+              <i data-lucide="folder-plus"></i>
+              <span>Create List</span>
+            </button>
+            <button id="btn-add-book" class="btn-primary flex-btn animate-btn">
+              <i data-lucide="plus"></i>
+              <span>Add Book</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Default List-of-Lists Grid View -->
+        <div id="lists-container" class="lists-grid">
+          <!-- Dynamic List Cards Rendered Here -->
+        </div>
+
+        <!-- Book List Details Sub-View -->
+        <div id="list-books-subview" class="list-books-subview hidden">
+          <div class="subview-header">
+            <div class="subview-header-top">
+              <button id="btn-back-to-lists" class="btn-back">
+                <i data-lucide="chevron-left"></i>
+                <span>All Lists</span>
+              </button>
+              <!-- Delete List Button (Hidden for System lists) -->
+              <button id="btn-delete-list" class="btn-delete-list btn-danger-outline flex-btn animate-btn hidden">
+                <i data-lucide="trash-2"></i>
+                <span>Delete List</span>
+              </button>
+            </div>
+            <div class="subview-header-title">
+              <h2 id="subview-list-title" class="list-title-header">List Name</h2>
+              <span id="subview-list-count" class="list-count-badge">0 books</span>
+            </div>
+          </div>
+          <div id="list-books-grid" class="books-grid">
+            <!-- Dynamic Books for Selected List Rendered Here -->
+          </div>
+        </div>
+      </section>
+
+      <!-- EXPLORE VIEW -->
+      <section id="view-explore" class="app-view">
+        <h1 class="view-title">Explore</h1>
+        
+        <!-- Interactive Genre Filter Chips -->
+        <div class="genre-chips-container">
+          <button class="genre-chip active" data-genre="all">All Genres</button>
+          <button class="genre-chip" data-genre="Fiction">Fiction</button>
+          <button class="genre-chip" data-genre="Sci-Fi">Sci-Fi</button>
+          <button class="genre-chip" data-genre="Self-Improvement">Self-Improvement</button>
+          <button class="genre-chip" data-genre="Biographies">Biographies</button>
+        </div>
+
+        <!-- Curated Genre Rows (Genre-wise recommendations) -->
+        <div class="explore-sections">
+          <!-- Fiction Shelf -->
+          <div class="explore-row-container" id="sec-explore-fiction">
+            <div class="row-header">
+              <h3>Fiction Favorites</h3>
+              <span class="row-subtitle">Curated stories and novels</span>
+            </div>
+            <div id="explore-fiction-row" class="explore-row">
+              <!-- Book cards generated dynamically -->
+            </div>
+          </div>
+
+          <!-- Sci-Fi Shelf -->
+          <div class="explore-row-container" id="sec-explore-scifi">
+            <div class="row-header">
+              <h3>Sci-Fi & Fantasy</h3>
+              <span class="row-subtitle">Venture into other worlds</span>
+            </div>
+            <div id="explore-scifi-row" class="explore-row">
+              <!-- Book cards generated dynamically -->
+            </div>
+          </div>
+
+          <!-- Self Improvement Shelf -->
+          <div class="explore-row-container" id="sec-explore-selfhelp">
+            <div class="row-header">
+              <h3>Self-Improvement</h3>
+              <span class="row-subtitle">Build habits and grow</span>
+            </div>
+            <div id="explore-selfhelp-row" class="explore-row">
+              <!-- Book cards generated dynamically -->
+            </div>
+          </div>
+
+          <!-- Biography Shelf -->
+          <div class="explore-row-container" id="sec-explore-biography">
+            <div class="row-header">
+              <h3>Biographies & Memoirs</h3>
+              <span class="row-subtitle">Real stories of inspiring people</span>
+            </div>
+            <div id="explore-biography-row" class="explore-row">
+              <!-- Book cards generated dynamically -->
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SEARCH VIEW -->
+      <section id="view-search" class="app-view">
+        <h1 class="view-title">Search</h1>
+        
+        <!-- Search Bar input -->
+        <div class="search-input-wrapper glass">
+          <i data-lucide="search" class="search-icon"></i>
+          <input type="text" id="search-input" placeholder="Search by title, author, or genre..." autocomplete="off">
+          <button id="search-clear-btn" class="search-clear-btn hidden">
+            <i data-lucide="x"></i>
+          </button>
+        </div>
+
+        <!-- Initial Grid of Genres (Spotify Style) -->
+        <div id="search-categories" class="search-categories-grid">
+          <div class="search-cat-card pastel-pink" data-search-genre="Fiction">
+            <h3>Fiction</h3>
+            <i data-lucide="book-open"></i>
+          </div>
+          <div class="search-cat-card pastel-blue" data-search-genre="Sci-Fi">
+            <h3>Sci-Fi & Fantasy</h3>
+            <i data-lucide="rocket"></i>
+          </div>
+          <div class="search-cat-card pastel-yellow" data-search-genre="Self-Improvement">
+            <h3>Self-Improvement</h3>
+            <i data-lucide="sparkles"></i>
+          </div>
+          <div class="search-cat-card pastel-purple" data-search-genre="Biographies">
+            <h3>Biographies</h3>
+            <i data-lucide="user"></i>
+          </div>
+          <div class="search-cat-card pastel-green" data-search-genre="Mystery">
+            <h3>Mystery</h3>
+            <i data-lucide="eye-off"></i>
+          </div>
+          <div class="search-cat-card pastel-peach" data-search-genre="History">
+            <h3>History</h3>
+            <i data-lucide="compass"></i>
+          </div>
+          <div class="search-cat-card pastel-peach" data-search-genre="Romance">
+            <h3>Romance</h3>
+            <i data-lucide="heart"></i>
+          </div>
+        </div>
+
+        <!-- Dynamic Search Results -->
+        <div id="search-results-container" class="search-results-section hidden">
+          <h3 id="search-results-header">Search Results</h3>
+          <div id="search-results-grid" class="books-grid">
+            <!-- Dynamically populated books search results -->
+          </div>
+        </div>
+      </section>
+
+      <!-- PROFILE VIEW -->
+      <section id="view-profile" class="app-view">
+        <h1 class="view-title">My Profile</h1>
+
+        <div class="profile-card glass">
+          <div class="profile-header-main">
+            <div class="profile-avatar glass">
+              <span id="profile-initials">R</span>
+            </div>
+            <div class="profile-meta">
+              <h2 id="profile-name">Reader Name</h2>
+              <p class="profile-tagline">“because my books won't control themselves”</p>
+            </div>
+          </div>
+
+          <!-- Apple Ring Style stats or visual cards -->
+          <div class="stats-dashboard">
+            <div class="stat-card glass">
+              <span class="stat-num" id="stat-books-count">0</span>
+              <span class="stat-label">Books Read</span>
+            </div>
+            <div class="stat-card glass">
+              <span class="stat-num" id="stat-pages-count">0</span>
+              <span class="stat-label">Pages Flipped</span>
+            </div>
+            <div class="stat-card glass">
+              <span class="stat-num" id="stat-avg-rating">0.0</span>
+              <span class="stat-label">Average Rating</span>
+            </div>
+            <div class="stat-card glass">
+              <span class="stat-num" id="stat-streak">0d</span>
+              <span class="stat-label">Reading Streak</span>
+            </div>
+          </div>
+
+          <!-- Reading Challenge widget with SVG ring -->
+          <div class="challenge-widget glass">
+            <div class="challenge-left">
+              <h3>Reading Challenge 2026</h3>
+              <p class="challenge-desc">Goal: <span id="challenge-goal-display">12</span> books this year</p>
+              <div class="challenge-input-row">
+                <input type="number" id="challenge-goal-input" min="1" value="12">
+                <button id="btn-update-goal" class="btn-mini animate-btn">Set</button>
+              </div>
+            </div>
+            <div class="challenge-right">
+              <div class="progress-ring-container">
+                <svg class="progress-ring" width="100" height="100">
+                  <circle class="progress-ring__circle-bg" stroke="rgba(26, 22, 18, 0.08)" stroke-width="8" fill="transparent" r="38" cx="50" cy="50"/>
+                  <circle id="challenge-ring-progress" class="progress-ring__circle" stroke="var(--primary-color)" stroke-width="8" fill="transparent" r="38" cx="50" cy="50"/>
+                </svg>
+                <div class="ring-label">
+                  <span id="challenge-completed-display" class="ring-num">0</span>
+                  <span class="ring-denom">/12</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Profile settings form block (Initially hidden) -->
+          <div id="profile-settings-section" class="profile-settings-section glass hidden">
+            <h3 class="settings-title">Edit Profile Settings</h3>
+            <form id="profile-edit-form">
+              <div class="form-group">
+                <label for="edit-profile-name">Reader Name</label>
+                <input type="text" id="edit-profile-name" required autocomplete="off">
+              </div>
+              <div class="form-group-row">
+                <div class="form-group">
+                  <label for="edit-profile-goal">Annual Goal</label>
+                  <input type="number" id="edit-profile-goal" min="1" required>
+                </div>
+                <div class="form-group">
+                  <label for="edit-profile-genre">Favorite Genre</label>
+                  <select id="edit-profile-genre" required>
+                    <option value="Fiction">Fiction</option>
+                    <option value="Sci-Fi">Sci-Fi</option>
+                    <option value="Self-Improvement">Self-Improvement</option>
+                    <option value="Biographies">Biographies</option>
+                    <option value="Mystery">Mystery</option>
+                    <option value="History">History</option>
+                    <option value="Romance">Romance</option>
+                  </select>
+                </div>
+              </div>
+              <div class="settings-actions">
+                <button type="button" id="btn-cancel-settings" class="btn-secondary flex-btn animate-btn">Cancel</button>
+                <button type="submit" class="btn-primary flex-btn animate-btn">Save Changes</button>
+              </div>
+            </form>
+          </div>
+
+          <!-- Profile Actions Zone -->
+          <div class="profile-actions-grid">
+            <button id="btn-toggle-settings" class="btn-secondary animate-btn">
+              <i data-lucide="settings"></i>
+              <span>Edit Profile</span>
+            </button>
+            <button id="btn-reset-data" class="btn-danger-outline animate-btn">
+              <i data-lucide="log-out"></i>
+              <span>Sign Out & Clear</span>
+            </button>
+          </div>
+        </div>
+      </section>
+
+    </main>
+
+    <!-- FLOATING BOTTOM NAVIGATION BAR -->
+    <nav class="bottom-navbar glass">
+      <button class="nav-item active" data-view="home">
+        <i data-lucide="home"></i>
+        <span>Home</span>
+      </button>
+      <button class="nav-item" data-view="explore">
+        <i data-lucide="compass"></i>
+        <span>Explore</span>
+      </button>
+      <button class="nav-item" data-view="search">
+        <i data-lucide="search"></i>
+        <span>Search</span>
+      </button>
+      <button class="nav-item" data-view="profile">
+        <i data-lucide="user"></i>
+        <span>Profile</span>
+      </button>
+    </nav>
+  </div>
+
+  <!-- CREATE LIST MODAL -->
+  <div id="modal-create-list" class="modal-overlay hidden">
+    <div class="modal-box glass animate-slide-up">
+      <div class="modal-header">
+        <h2>Create New List</h2>
+        <button class="btn-close-modal" id="btn-close-create-list">
+          <i data-lucide="x"></i>
+        </button>
+      </div>
+      <form id="create-list-form">
+        <div class="form-group">
+          <label for="list-name">List Title</label>
+          <input type="text" id="list-name" placeholder="e.g. Summer Thrillers, Daily Habits" required autocomplete="off">
+        </div>
+
+        <div class="form-group">
+          <label>Theme Color (Pastel)</label>
+          <div class="color-picker-grid">
+            <label class="color-option pastel-blue">
+              <input type="radio" name="list-color" value="blue" checked>
+              <span class="color-dot"></span>
+            </label>
+            <label class="color-option pastel-pink">
+              <input type="radio" name="list-color" value="pink">
+              <span class="color-dot"></span>
+            </label>
+            <label class="color-option pastel-yellow">
+              <input type="radio" name="list-color" value="yellow">
+              <span class="color-dot"></span>
+            </label>
+            <label class="color-option pastel-green">
+              <input type="radio" name="list-color" value="green">
+              <span class="color-dot"></span>
+            </label>
+            <label class="color-option pastel-purple">
+              <input type="radio" name="list-color" value="purple">
+              <span class="color-dot"></span>
+            </label>
+            <label class="color-option pastel-peach">
+              <input type="radio" name="list-color" value="peach">
+              <span class="color-dot"></span>
+            </label>
+          </div>
+        </div>
+
+        <button type="submit" class="btn-primary animate-btn full-width">
+          Create List
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ADD BOOK MODAL/SHEET (Apple Style Slide up) -->
+  <div id="sheet-add-book" class="sheet-overlay hidden">
+    <div class="sheet-box glass animate-slide-up">
+      <div class="sheet-handle"></div>
+      <div class="sheet-header">
+        <h2>Add Book to Library</h2>
+        <button class="btn-close-sheet" id="btn-close-add-book">
+          <i data-lucide="x"></i>
+        </button>
+      </div>
+
+      <form id="add-book-form" class="sheet-form">
+        <div class="form-group-row">
+          <div class="form-group">
+            <label for="book-title">Title</label>
+            <input type="text" id="book-title" placeholder="e.g. Atomic Habits" required autocomplete="off">
+          </div>
+          <div class="form-group">
+            <label for="book-author">Author</label>
+            <input type="text" id="book-author" placeholder="e.g. James Clear" required autocomplete="off">
+          </div>
+        </div>
+
+        <div class="form-group-row">
+          <div class="form-group">
+            <label for="book-pages">Total Pages</label>
+            <input type="number" id="book-pages" placeholder="320" min="1" required>
+          </div>
+          <div class="form-group">
+            <label for="book-genre">Genre</label>
+            <select id="book-genre" required>
+              <option value="Fiction">Fiction</option>
+              <option value="Sci-Fi">Sci-Fi & Fantasy</option>
+              <option value="Self-Improvement">Self-Improvement</option>
+              <option value="Biographies">Biographies & Memoirs</option>
+              <option value="Mystery">Mystery & Thriller</option>
+              <option value="History">History & Science</option>
+              <option value="Romance">Romance</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="book-description">Description (Optional)</label>
+          <textarea id="book-description" rows="3" placeholder="Brief summary of the book..."></textarea>
+        </div>
+
+        <div class="form-group">
+          <label>Assign to Shelves/Lists</label>
+          <div id="add-book-lists-checkboxes" class="checkbox-options-grid">
+            <!-- Checked lists elements created dynamically -->
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>Book Cover Color (Pastel Fallback)</label>
+          <div class="color-picker-grid">
+            <label class="color-option pastel-blue">
+              <input type="radio" name="book-color" value="blue" checked>
+              <span class="color-dot"></span>
+            </label>
+            <label class="color-option pastel-pink">
+              <input type="radio" name="book-color" value="pink">
+              <span class="color-dot"></span>
+            </label>
+            <label class="color-option pastel-yellow">
+              <input type="radio" name="book-color" value="yellow">
+              <span class="color-dot"></span>
+            </label>
+            <label class="color-option pastel-green">
+              <input type="radio" name="book-color" value="green">
+              <span class="color-dot"></span>
+            </label>
+            <label class="color-option pastel-purple">
+              <input type="radio" name="book-color" value="purple">
+              <span class="color-dot"></span>
+            </label>
+            <label class="color-option pastel-peach">
+              <input type="radio" name="book-color" value="peach">
+              <span class="color-dot"></span>
+            </label>
+          </div>
+        </div>
+
+        <div class="form-group api-notice-group">
+          <div class="api-notice">
+            <i data-lucide="sparkles" class="api-notice-icon"></i>
+            <span>Covers are automatically matched via Open Library API.</span>
+          </div>
+        </div>
+
+        <button type="submit" class="btn-primary animate-btn full-width">
+          Add Book to Shelf
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- BOOK DETAIL SLIDE SHEET (Clean Solid Background, no translucent blur) -->
+  <div id="sheet-book-detail" class="sheet-overlay hidden">
+    <div class="sheet-box book-detail-sheet animate-slide-up">
+      <div class="sheet-handle"></div>
+      <div class="sheet-header">
+        <span class="sheet-subtitle" id="detail-genre">Genre</span>
+        <button class="btn-close-sheet" id="btn-close-book-detail">
+          <i data-lucide="x"></i>
+        </button>
+      </div>
+
+      <div class="detail-scroll-container">
+        <!-- Cover Showcase (Supporting Real Image or CSS fallback) -->
+        <div class="detail-cover-showcase">
+          <div id="detail-cover-image-container" class="cover-image-wrapper large-cover hidden">
+            <img id="detail-cover-image" src="" alt="Book Cover" class="book-cover-img">
+          </div>
+          <div id="detail-cover-rendered" class="rendered-book-cover large-cover">
+            <span id="detail-cover-title" class="cover-title">Title</span>
+            <span id="detail-cover-author" class="cover-author">Author</span>
+            <div class="cover-decor-line"></div>
+          </div>
+        </div>
+
+        <div class="detail-info-header">
+          <h1 id="detail-title" class="detail-book-title">Book Title</h1>
+          <p id="detail-author" class="detail-book-author">by Author Name</p>
+        </div>
+
+        <!-- Editable Description & Notes Area (Instantly saves as you type) -->
+        <div class="detail-section clean-panel">
+          <h3>Description & Notes</h3>
+          <textarea id="detail-description-input" class="detail-description-textarea" rows="4" placeholder="Write a summary or add reading logs for this book..."></textarea>
+        </div>
+
+        <!-- Reading Progress Section -->
+        <div class="detail-section clean-panel">
+          <div class="section-title-row">
+            <h3>Reading Progress</h3>
+            <span id="detail-progress-percent" class="progress-percent-badge">0%</span>
+          </div>
+
+          <div class="progress-inputs-group">
+            <div class="progress-range-wrapper">
+              <input type="range" id="detail-progress-slider" min="0" max="100" value="0" class="premium-slider">
+            </div>
+            <div class="progress-number-row">
+              <div class="number-input-wrap">
+                <input type="number" id="detail-progress-current" min="0" value="0">
+                <span class="num-separator">/</span>
+                <span id="detail-progress-total" class="total-pages-label">300</span>
+              </div>
+              <span class="pages-label-text">pages read</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Rating Section -->
+        <div class="detail-section clean-panel">
+          <h3>Your Rating</h3>
+          <div class="stars-rating-container" id="detail-stars-container">
+            <i data-lucide="star" class="star-icon" data-value="1"></i>
+            <i data-lucide="star" class="star-icon" data-value="2"></i>
+            <i data-lucide="star" class="star-icon" data-value="3"></i>
+            <i data-lucide="star" class="star-icon" data-value="4"></i>
+            <i data-lucide="star" class="star-icon" data-value="5"></i>
+          </div>
+        </div>
+
+        <!-- Shift Shelves checkboxes -->
+        <div class="detail-section clean-panel">
+          <h3>Shelves & Lists</h3>
+          <div id="detail-lists-checkboxes" class="checkbox-options-grid">
+            <!-- Checked lists elements created dynamically -->
+          </div>
+        </div>
+
+        <!-- Delete book option -->
+        <div class="detail-danger-action">
+          <button id="btn-delete-book" class="btn-danger-outline full-width animate-btn">
+            <i data-lucide="trash-2"></i>
+            <span>Remove Book from Library</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Import JS Module Application Logic -->
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
