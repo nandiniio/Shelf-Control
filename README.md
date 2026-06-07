@@ -2,6 +2,7 @@
 
 A reading tracker for people who romanticize their lives, buy books faster than they finish them, and swear they'll read *just one more chapter*.
 Shelf Control helps you keep track of your reading goals, discover your next favorite book, and turn your bookshelf into something a little more magical.
+
 🌙 Dark mode included, of course.
 
 ---
