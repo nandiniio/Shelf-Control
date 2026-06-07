@@ -6,7 +6,8 @@ import {
   getUserProfile,
   saveUserProfile,
   clearAllData,
-  initializeStorage
+  initializeStorage,
+  FAMOUS_QUOTES
 } from './data.js';
 
 // Application State
@@ -35,6 +36,7 @@ const appViews = document.querySelectorAll('.app-view');
 const modalCreateList = document.getElementById('modal-create-list');
 const sheetAddBook = document.getElementById('sheet-add-book');
 const sheetBookDetail = document.getElementById('sheet-book-detail');
+const modalShareShelf = document.getElementById('modal-share-shelf');
 
 // Profile Settings Elements
 const btnToggleSettings = document.getElementById('btn-toggle-settings');
@@ -44,6 +46,14 @@ const editProfileName = document.getElementById('edit-profile-name');
 const editProfileGoal = document.getElementById('edit-profile-goal');
 const editProfileGenre = document.getElementById('edit-profile-genre');
 const btnCancelSettings = document.getElementById('btn-cancel-settings');
+
+// Reminder settings triggers
+const reminderToggle = document.getElementById('reminder-toggle');
+const reminderTime = document.getElementById('reminder-time');
+
+// Book Detail tabs
+const tabButtons = document.querySelectorAll('.detail-tab-btn');
+const tabPanels = document.querySelectorAll('.detail-tab-panel');
 
 // Init application
 document.addEventListener('DOMContentLoaded', () => {
@@ -74,10 +84,15 @@ function initApp() {
     
     updateHeader();
     renderActiveView();
+    updateQuoteOfTheDay();
   }
   
   setupEventListeners();
+  setupDragAndDrop();
   lucide.createIcons();
+  
+  // Start Notifications Check Loop
+  setInterval(checkReadingReminders, 60000);
 }
 
 // THEME MANAGER
@@ -102,36 +117,217 @@ function setTheme(isDark) {
   lucide.createIcons();
 }
 
-// OPEN LIBRARY COVER FETCH API
-async function fetchBookCover(title, author) {
+// DYNAMIC discover CATEGORIES RECOMMENDATIONS FETCH
+async function fetchDiscoverRecommendations(genre) {
+  const skeletons = document.getElementById('discover-skeletons');
+  const grid = document.getElementById('discover-results-grid');
+  
+  skeletons.classList.remove('hidden');
+  grid.classList.add('hidden');
+  grid.innerHTML = '';
+  
   try {
-    const query = encodeURIComponent(`${title} ${author}`);
-    const searchUrl = `https://openlibrary.org/search.json?q=${query}&limit=1`;
-    
-    const response = await fetch(searchUrl);
-    if (!response.ok) return null;
-    
+    let subject = 'fiction';
+    if (genre === 'Sci-Fi') subject = 'science_fiction';
+    if (genre === 'Self-Improvement') subject = 'self-help';
+    if (genre === 'Biographies') subject = 'biography';
+    if (genre === 'Mystery') subject = 'mystery';
+    if (genre === 'History') subject = 'history';
+
+    const response = await fetch(`https://openlibrary.org/subjects/${subject}.json?limit=10`);
+    if (!response.ok) throw new Error('API failure');
     const data = await response.json();
-    if (data.docs && data.docs.length > 0) {
-      const doc = data.docs[0];
-      if (doc.cover_i) {
-        return `https://covers.openlibrary.org/b/id/${doc.cover_i}-M.jpg`;
-      }
+    
+    if (data.works && data.works.length > 0) {
+      data.works.forEach(work => {
+        const itemBook = {
+          id: 'discover-' + work.key.split('/').pop(),
+          title: work.title,
+          author: work.authors && work.authors.length > 0 ? work.authors[0].name : 'Unknown Author',
+          pages: 320,
+          description: `A curated literary pick recommendation in ${genre} from Open Library.`,
+          coverUrl: work.cover_id ? `https://covers.openlibrary.org/b/id/${work.cover_id}-M.jpg` : '',
+          genre: genre,
+          rating: (4.0 + Math.random() * 0.9).toFixed(1),
+          color: getRandomPastelColor()
+        };
+        grid.appendChild(createDiscoverCard(itemBook));
+      });
+    } else {
+      renderDiscoverFallback(genre);
     }
   } catch (error) {
-    console.error('Failed to retrieve book cover from Open Library:', error);
+    console.error('Discover API fetch failed, loading fallback:', error);
+    renderDiscoverFallback(genre);
+  } finally {
+    skeletons.classList.add('hidden');
+    grid.classList.remove('hidden');
+    lucide.createIcons();
   }
-  return null;
+}
+
+// Offline fallback lists for Discover View
+function renderDiscoverFallback(genre) {
+  const grid = document.getElementById('discover-results-grid');
+  grid.innerHTML = '';
+
+  const fallbackData = {
+    'Fiction': [
+      { title: 'The Great Gatsby', author: 'F. Scott Fitzgerald', pages: 180, coverUrl: 'https://covers.openlibrary.org/b/isbn/9780743273565-M.jpg', color: 'pink' },
+      { title: 'The Midnight Library', author: 'Matt Haig', pages: 304, coverUrl: 'https://covers.openlibrary.org/b/isbn/9780525559474-M.jpg', color: 'blue' },
+      { title: 'The Alchemist', author: 'Paulo Coelho', pages: 167, coverUrl: 'https://covers.openlibrary.org/b/isbn/9780061122415-M.jpg', color: 'yellow' }
+    ],
+    'Sci-Fi': [
+      { title: 'Dune', author: 'Frank Herbert', pages: 604, coverUrl: 'https://covers.openlibrary.org/b/isbn/9780441172719-M.jpg', color: 'peach' },
+      { title: 'Project Hail Mary', author: 'Andy Weir', pages: 476, coverUrl: 'https://covers.openlibrary.org/b/isbn/9780593135204-M.jpg', color: 'green' },
+      { title: 'Neuromancer', author: 'William Gibson', pages: 271, coverUrl: 'https://covers.openlibrary.org/b/isbn/9780441569595-M.jpg', color: 'purple' }
+    ],
+    'Self-Improvement': [
+      { title: 'Atomic Habits', author: 'James Clear', pages: 320, coverUrl: 'https://covers.openlibrary.org/b/isbn/9780735211292-M.jpg', color: 'yellow' },
+      { title: 'Deep Work', author: 'Cal Newport', pages: 304, coverUrl: 'https://covers.openlibrary.org/b/isbn/9781455586691-M.jpg', color: 'blue' },
+      { title: 'The Power of Habit', author: 'Charles Duhigg', pages: 371, coverUrl: 'https://covers.openlibrary.org/b/isbn/9780812981605-M.jpg', color: 'pink' }
+    ],
+    'Biographies': [
+      { title: 'Educated', author: 'Tara Westover', pages: 352, coverUrl: 'https://covers.openlibrary.org/b/isbn/9780399590504-M.jpg', color: 'purple' },
+      { title: 'Steve Jobs', author: 'Walter Isaacson', pages: 656, coverUrl: 'https://covers.openlibrary.org/b/isbn/9781451648539-M.jpg', color: 'green' },
+      { title: 'Becoming', author: 'Michelle Obama', pages: 448, coverUrl: 'https://covers.openlibrary.org/b/isbn/9781524763138-M.jpg', color: 'pink' }
+    ],
+    'Mystery': [
+      { title: 'The Silent Patient', author: 'Alex Michaelides', pages: 336, coverUrl: 'https://covers.openlibrary.org/b/isbn/9781250301697-M.jpg', color: 'peach' },
+      { title: 'Gone Girl', author: 'Gillian Flynn', pages: 432, coverUrl: 'https://covers.openlibrary.org/b/isbn/9780307588371-M.jpg', color: 'blue' }
+    ]
+  };
+
+  const selectedList = fallbackData[genre] || fallbackData['Fiction'];
+  selectedList.forEach(book => {
+    const itemBook = {
+      id: 'fallback-' + Date.now() + '-' + Math.round(Math.random()*100),
+      title: book.title,
+      author: book.author,
+      pages: book.pages,
+      description: `A highly recommended curated classic in ${genre}.`,
+      coverUrl: book.coverUrl,
+      genre: genre,
+      rating: (4.2 + Math.random() * 0.7).toFixed(1),
+      color: book.color
+    };
+    grid.appendChild(createDiscoverCard(itemBook));
+  });
+}
+
+function getRandomPastelColor() {
+  const colors = ['blue', 'pink', 'yellow', 'green', 'purple', 'peach'];
+  return colors[Math.floor(Math.random() * colors.length)];
+}
+
+function createDiscoverCard(apiBook) {
+  const card = document.createElement('div');
+  card.className = 'book-card discover-card-wrapper';
+  
+  const hasCoverUrl = apiBook.coverUrl && apiBook.coverUrl.trim().length > 0;
+  const isAlreadyAdded = books.some(b => b.title.toLowerCase() === apiBook.title.toLowerCase());
+
+  card.innerHTML = `
+    <div class="cover-wrapper">
+      ${hasCoverUrl ? `
+        <div class="cover-image-wrapper">
+          <img src="${apiBook.coverUrl}" alt="${apiBook.title}" class="book-cover-img" loading="lazy" onerror="this.parentElement.style.display='none'">
+        </div>
+      ` : ''}
+      <div class="rendered-book-cover pastel-${apiBook.color}">
+        <span class="cover-title">${apiBook.title}</span>
+        <div class="cover-decor-line"></div>
+        <span class="cover-author">${apiBook.author}</span>
+      </div>
+    </div>
+    
+    <!-- One-Tap Add Button -->
+    <button class="discover-card-add-btn animate-btn ${isAlreadyAdded ? 'added' : ''}" title="Add to Want to Read">
+      <i data-lucide="${isAlreadyAdded ? 'check' : 'plus'}"></i>
+    </button>
+    
+    <div class="book-card-info">
+      <h4 class="book-card-title">${apiBook.title}</h4>
+      <p class="book-card-author">${apiBook.author}</p>
+      <div class="discover-rating-badge">
+        <i data-lucide="star"></i>
+        <span>${apiBook.rating}</span>
+      </div>
+    </div>
+  `;
+
+  // One tap add list event
+  const addBtn = card.querySelector('.discover-card-add-btn');
+  addBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    
+    if (books.some(b => b.title.toLowerCase() === apiBook.title.toLowerCase())) {
+      showToast('Book already in library!');
+      return;
+    }
+
+    const newBook = {
+      id: 'book-' + Date.now(),
+      title: apiBook.title,
+      author: apiBook.author,
+      pages: apiBook.pages,
+      currentPage: 0,
+      rating: 0,
+      lists: ['want-to-read'],
+      color: apiBook.color,
+      genre: apiBook.genre,
+      description: apiBook.description,
+      coverUrl: apiBook.coverUrl,
+      dateAdded: new Date().toISOString(),
+      readingLogs: [],
+      quotes: [],
+      notes: ''
+    };
+
+    books.push(newBook);
+    saveBooks(books);
+    
+    addBtn.classList.add('added');
+    addBtn.innerHTML = '<i data-lucide="check"></i>';
+    lucide.createIcons();
+    
+    showToast(`Added "${apiBook.title}" to Want to Read!`);
+    
+    // Increment streak on add as a friendly trigger
+    updateStreakOnRead();
+  });
+
+  card.addEventListener('click', () => {
+    // Load Discover details dynamically
+    const mockBook = {
+      id: apiBook.id,
+      title: apiBook.title,
+      author: apiBook.author,
+      pages: apiBook.pages,
+      currentPage: 0,
+      rating: 0,
+      lists: ['want-to-read'],
+      color: apiBook.color,
+      genre: apiBook.genre,
+      description: apiBook.description,
+      coverUrl: apiBook.coverUrl,
+      readingLogs: [],
+      quotes: [],
+      notes: ''
+    };
+    openBookDetailSheet(mockBook);
+  });
+
+  return card;
 }
 
 // SETUP EVENT LISTENERS
 function setupEventListeners() {
-  // Theme Toggle Button click
   btnThemeToggle.addEventListener('click', () => {
     setTheme(!darkMode);
   });
 
-  // Signup Submit
+  // Signup Onboarding Submit
   signupForm.addEventListener('submit', (e) => {
     e.preventDefault();
     const name = signupNameInput.value.trim();
@@ -139,7 +335,6 @@ function setupEventListeners() {
     const favoriteGenre = signupGenreInput.value;
     const librarySetupOption = document.querySelector('input[name="signup-library-option"]:checked').value;
     
-    // Initialize storage based on their sample vs clean choice
     const startWithSample = librarySetupOption === 'sample';
     initializeStorage(startWithSample);
     
@@ -148,7 +343,10 @@ function setupEventListeners() {
       annualGoal: goal,
       favoriteGenre: favoriteGenre,
       streak: 1,
-      lastReadDate: new Date().toISOString().split('T')[0]
+      lastReadDate: new Date().toISOString().split('T')[0],
+      reminderEnabled: false,
+      reminderTime: '20:00',
+      lastReminderSentDate: ''
     };
     
     saveUserProfile(profile);
@@ -157,15 +355,15 @@ function setupEventListeners() {
     
     updateHeader();
     
-    // Transition views
     onboardingScreen.classList.add('onboarding-hidden');
     onboardingScreen.classList.remove('onboarding-active');
     appContainer.classList.remove('app-hidden');
     
     switchView('home');
+    updateQuoteOfTheDay();
   });
 
-  // Tab switcher
+  // Tab switching links
   navItems.forEach(item => {
     item.addEventListener('click', () => {
       const viewId = item.dataset.view;
@@ -196,7 +394,11 @@ function setupEventListeners() {
     closeSheet(sheetBookDetail);
   });
 
-  // Create List Form Submit
+  document.getElementById('btn-close-share-shelf').addEventListener('click', () => {
+    closeModal(modalShareShelf);
+  });
+
+  // Create Custom List Form
   document.getElementById('create-list-form').addEventListener('submit', (e) => {
     e.preventDefault();
     const title = document.getElementById('list-name').value.trim();
@@ -204,7 +406,7 @@ function setupEventListeners() {
     
     const newList = {
       id: 'list-' + Date.now(),
-      title: title,
+      title: '📁 ' + title,
       color: color,
       isSystem: false
     };
@@ -217,7 +419,7 @@ function setupEventListeners() {
     renderHome();
   });
 
-  // Add Book Form Submit
+  // Add Book Modal form
   document.getElementById('add-book-form').addEventListener('submit', (e) => {
     e.preventDefault();
     const title = document.getElementById('book-title').value.trim();
@@ -247,12 +449,16 @@ function setupEventListeners() {
       color: color,
       genre: genre,
       description: description || 'No summary available.',
-      coverUrl: '', // Starts empty, populated by API in background
-      dateAdded: new Date().toISOString()
+      coverUrl: '',
+      dateAdded: new Date().toISOString(),
+      readingLogs: [],
+      quotes: [],
+      notes: ''
     };
 
     if (isCompleted) {
       newBook.dateCompleted = new Date().toISOString();
+      newBook.readingLogs.push({ date: new Date().toISOString().split('T')[0], pagesLogged: pages });
     }
 
     books.push(newBook);
@@ -261,42 +467,74 @@ function setupEventListeners() {
     closeSheet(sheetAddBook);
     document.getElementById('add-book-form').reset();
     
-    // Render current layout immediately
     renderActiveView();
 
-    // Async Fetch Cover from API in the background
+    // Background cover fetch
     fetchBookCover(title, author).then(coverUrl => {
       if (coverUrl) {
-        // Update URL
         newBook.coverUrl = coverUrl;
         books = books.map(b => b.id === newBook.id ? newBook : b);
         saveBooks(books);
-        renderActiveView(); // Repopulates view with cover loaded!
+        renderActiveView();
       }
     });
   });
 
-  // Back from details subview
+  // Back from details subview list
   document.getElementById('btn-back-to-lists').addEventListener('click', () => {
     document.getElementById('list-books-subview').classList.add('hidden');
     document.getElementById('lists-container').classList.remove('hidden');
   });
 
-  // Profile - Reading Challenge Goal change
+  // Delete List button trigger
+  document.getElementById('btn-delete-list').addEventListener('click', () => {
+    const listId = document.getElementById('btn-delete-list').dataset.targetListId;
+    const listObj = lists.find(l => l.id === listId);
+    
+    if (!listObj || listObj.isSystem) return;
+    
+    if (confirm(`Are you sure you want to delete the list "${listObj.title}"? Books inside won't be deleted.`)) {
+      // Remove List ID association from all books
+      books = books.map(b => {
+        b.lists = b.lists.filter(l => l !== listId);
+        // Fallback default list check
+        if (b.lists.length === 0) {
+          b.lists.push('want-to-read');
+        }
+        return b;
+      });
+      saveBooks(books);
+      
+      // Filter out list
+      lists = lists.filter(l => l.id !== listId);
+      saveLists(lists);
+      
+      document.getElementById('list-books-subview').classList.add('hidden');
+      document.getElementById('lists-container').classList.remove('hidden');
+      renderHome();
+    }
+  });
+
+  // Profile - Edit Goal
   document.getElementById('btn-update-goal').addEventListener('click', () => {
     const inputVal = parseInt(document.getElementById('challenge-goal-input').value);
     if (inputVal > 0) {
       profile.annualGoal = inputVal;
       saveUserProfile(profile);
       renderProfile();
+      showToast(`Annual challenge goal set to ${inputVal} books!`);
     }
   });
 
-  // Profile - Settings Edit Toggles
+  // Profile - Edit settings toggle
   btnToggleSettings.addEventListener('click', () => {
     editProfileName.value = profile.name;
     editProfileGoal.value = profile.annualGoal;
     editProfileGenre.value = profile.favoriteGenre || 'Fiction';
+    
+    // Check reminders toggles
+    reminderToggle.checked = profile.reminderEnabled || false;
+    reminderTime.value = profile.reminderTime || '20:00';
     
     profileSettingsSection.classList.remove('hidden');
     document.querySelector('.profile-actions-grid').classList.add('hidden');
@@ -313,7 +551,26 @@ function setupEventListeners() {
     profile.annualGoal = parseInt(editProfileGoal.value) || 12;
     profile.favoriteGenre = editProfileGenre.value;
     
-    saveUserProfile(profile);
+    // Reminder updates
+    const reminderEnabledVal = reminderToggle.checked;
+    profile.reminderEnabled = reminderEnabledVal;
+    profile.reminderTime = reminderTime.value;
+    
+    if (reminderEnabledVal && Notification.permission !== 'granted') {
+      Notification.requestPermission().then(permission => {
+        if (permission === 'granted') {
+          showToast("Notifications enabled!");
+        } else {
+          showToast("Notification permission blocked.");
+          profile.reminderEnabled = false;
+          reminderToggle.checked = false;
+        }
+        saveUserProfile(profile);
+      });
+    } else {
+      saveUserProfile(profile);
+    }
+    
     updateHeader();
     renderProfile();
     
@@ -321,15 +578,15 @@ function setupEventListeners() {
     document.querySelector('.profile-actions-grid').classList.remove('hidden');
   });
 
-  // Profile - Reset Data / Sign Out
+  // Profile - Clear Data Reset
   document.getElementById('btn-reset-data').addEventListener('click', () => {
-    if (confirm('Are you sure you want to sign out and clear all books/lists? This action cannot be undone.')) {
+    if (confirm('Are you sure you want to sign out? This deletes your streaks, reading history logs, and quotes.')) {
       clearAllData();
       location.reload();
     }
   });
 
-  // Search filter
+  // Search input typing
   const searchInput = document.getElementById('search-input');
   const searchClearBtn = document.getElementById('search-clear-btn');
   
@@ -361,16 +618,16 @@ function setupEventListeners() {
     });
   });
 
-  // Explore Genre Chip filter click
-  document.querySelectorAll('.genre-chip').forEach(chip => {
-    chip.addEventListener('click', (e) => {
-      document.querySelectorAll('.genre-chip').forEach(c => c.classList.remove('active'));
+  // Discover chips selectors clicking
+  document.querySelectorAll('#discover-genre-chips .genre-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      document.querySelectorAll('#discover-genre-chips .genre-chip').forEach(c => c.classList.remove('active'));
       chip.classList.add('active');
-      renderExplore(chip.dataset.genre);
+      fetchDiscoverRecommendations(chip.dataset.genre);
     });
   });
 
-  // Book Detail inputs sync
+  // Synchronize ranges slider page numbers
   const progressSlider = document.getElementById('detail-progress-slider');
   const progressCurrent = document.getElementById('detail-progress-current');
 
@@ -394,12 +651,84 @@ function setupEventListeners() {
     updateDetailProgressLive(pageVal);
   });
 
-  // Star Ratings Clicks
-  document.querySelectorAll('#detail-stars-container .star-icon').forEach(star => {
-    star.addEventListener('click', () => {
-      const val = parseInt(star.dataset.value);
-      updateBookRating(val);
+  // Event delegation for detail rating star clicks
+  document.getElementById('detail-stars-container').addEventListener('click', (e) => {
+    const star = e.target.closest('.star-icon');
+    if (star) {
+      const val = parseInt(star.getAttribute('data-value') || star.dataset.value);
+      if (val) {
+        updateBookRating(val);
+      }
+    }
+  });
+
+  // Book Detail Tabs switching triggers
+  tabButtons.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const targetTab = btn.dataset.tab;
+      
+      tabButtons.forEach(b => b.classList.remove('active'));
+      tabPanels.forEach(p => p.classList.remove('active'));
+      
+      btn.classList.add('active');
+      document.getElementById(`detail-panel-${targetTab}`).classList.add('active');
     });
+  });
+
+  // Auto-save descriptions & notes textareas on input
+  document.getElementById('detail-description-input').addEventListener('change', (e) => {
+    if (selectedBookForDetail) {
+      selectedBookForDetail.description = e.target.value;
+      saveBookDetailChanges();
+    }
+  });
+
+  document.getElementById('detail-notes-input').addEventListener('change', (e) => {
+    if (selectedBookForDetail) {
+      selectedBookForDetail.notes = e.target.value;
+      saveBookDetailChanges();
+    }
+  });
+
+  // Add highlight quotes button click
+  document.getElementById('btn-add-quote').addEventListener('click', () => {
+    const textVal = document.getElementById('quote-input-text').value.trim();
+    if (textVal && selectedBookForDetail) {
+      selectedBookForDetail.quotes = selectedBookForDetail.quotes || [];
+      selectedBookForDetail.quotes.push({
+        text: textVal,
+        dateAdded: new Date().toISOString()
+      });
+      document.getElementById('quote-input-text').value = '';
+      
+      saveBookDetailChanges();
+      renderDetailQuotes(selectedBookForDetail);
+      showToast("Quote highlight added!");
+      updateQuoteOfTheDay();
+    }
+  });
+
+  // Share shelf Instagram Story trigger
+  document.getElementById('btn-trigger-share').addEventListener('click', () => {
+    openModal(modalShareShelf);
+    renderShareCanvas();
+  });
+
+  document.getElementById('btn-download-share').addEventListener('click', () => {
+    const canvas = document.getElementById('share-canvas');
+    const url = canvas.toDataURL('image/png');
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${profile.name.replace(' ', '_')}_Shelf_Control_Stats.png`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    showToast("Story card image downloaded!");
+  });
+
+  // Quote card on Home page clicking (shuffles to another one!)
+  document.getElementById('quote-of-the-day-container').addEventListener('click', () => {
+    updateQuoteOfTheDay();
   });
 
   // Delete Book
@@ -409,7 +738,39 @@ function setupEventListeners() {
       saveBooks(books);
       closeSheet(sheetBookDetail);
       renderActiveView();
+      updateQuoteOfTheDay();
     }
+  });
+}
+
+// DRAG AND DROP REORDER LISTS
+function setupDragAndDrop() {
+  const container = document.getElementById('lists-container');
+  if (!container) return;
+
+  container.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    const draggingCard = document.querySelector('.list-card.dragging');
+    if (!draggingCard) return;
+    
+    const siblings = [...container.querySelectorAll('.list-card:not(.dragging)')];
+    const nextSibling = siblings.find(sibling => {
+      const box = sibling.getBoundingClientRect();
+      const offset = e.clientY - box.top - box.height / 2;
+      const offsetHoriz = e.clientX - box.left - box.width / 2;
+      return (offset < 0 && offsetHoriz < 0) || (offset < 0);
+    });
+
+    container.insertBefore(draggingCard, nextSibling);
+  });
+
+  container.addEventListener('drop', (e) => {
+    e.preventDefault();
+    const reorderedIds = [...container.querySelectorAll('.list-card')].map(card => card.dataset.listId);
+    
+    // Sort lists to match this order
+    lists.sort((a, b) => reorderedIds.indexOf(a.id) - reorderedIds.indexOf(b.id));
+    saveLists(lists);
   });
 }
 
@@ -451,8 +812,10 @@ function renderActiveView() {
     case 'home':
       renderHome();
       break;
-    case 'explore':
-      renderExplore('all');
+    case 'discover':
+      // Initialize discovery Recommendations on load
+      const activeDiscoverGenre = document.querySelector('#discover-genre-chips .genre-chip.active').dataset.genre;
+      fetchDiscoverRecommendations(activeDiscoverGenre);
       break;
     case 'search':
       const searchVal = document.getElementById('search-input').value.trim();
@@ -481,6 +844,7 @@ function renderHome() {
     'currently-reading': 'book-open',
     'want-to-read': 'bookmark',
     'completed': 'check-circle',
+    'abandoned': 'x-circle',
     'favorites': 'heart'
   };
 
@@ -490,6 +854,7 @@ function renderHome() {
 
     const card = document.createElement('div');
     card.className = `list-card pastel-${list.color} animate-btn`;
+    card.dataset.listId = list.id;
     card.innerHTML = `
       <div class="list-card-icon-wrap">
         <i data-lucide="${iconName}"></i>
@@ -499,6 +864,15 @@ function renderHome() {
         <span class="list-card-count">${count} ${count === 1 ? 'book' : 'books'}</span>
       </div>
     `;
+
+    // Drag events
+    card.setAttribute('draggable', 'true');
+    card.addEventListener('dragstart', () => {
+      card.classList.add('dragging');
+    });
+    card.addEventListener('dragend', () => {
+      card.classList.remove('dragging');
+    });
 
     card.addEventListener('click', () => {
       openListBooksSubview(list);
@@ -516,12 +890,21 @@ function openListBooksSubview(list) {
   const subviewTitle = document.getElementById('subview-list-title');
   const subviewCount = document.getElementById('subview-list-count');
   const subviewGrid = document.getElementById('list-books-grid');
+  const deleteBtn = document.getElementById('btn-delete-list');
   
   listsContainer.classList.add('hidden');
   subview.classList.remove('hidden');
   
   subviewTitle.textContent = list.title;
   
+  // Show delete option for custom lists only
+  if (list.isSystem) {
+    deleteBtn.classList.add('hidden');
+  } else {
+    deleteBtn.classList.remove('hidden');
+    deleteBtn.dataset.targetListId = list.id;
+  }
+
   const listBooks = books.filter(b => b.lists.includes(list.id));
   subviewCount.textContent = `${listBooks.length} ${listBooks.length === 1 ? 'book' : 'books'}`;
   
@@ -532,7 +915,7 @@ function openListBooksSubview(list) {
       <div class="empty-state-notice" style="grid-column: span 2; text-align: center; padding: 40px 20px; color: var(--text-secondary);">
         <i data-lucide="inbox" style="width: 40px; height: 40px; margin-bottom: 8px; opacity: 0.5;"></i>
         <p style="font-size: 14px; font-weight: 500;">No books in this list yet.</p>
-        <p style="font-size: 12px; opacity: 0.7; margin-top: 4px;">Tap "Add Book" above to stock your shelf.</p>
+        <p style="font-size: 12px; opacity: 0.7; margin-top: 4px;">Log pages or add new titles.</p>
       </div>
     `;
   } else {
@@ -544,7 +927,16 @@ function openListBooksSubview(list) {
   lucide.createIcons();
 }
 
-// Generate Book Cards (Supports Real Cover + Fallback Cover styling)
+function getAveragePace(book) {
+  if (!book.readingLogs || book.readingLogs.length === 0) {
+    return (profile && profile.averagePace) ? profile.averagePace : 20; // default 20
+  }
+  const totalRead = book.readingLogs.reduce((sum, l) => sum + l.pagesLogged, 0);
+  const days = book.readingLogs.length;
+  return Math.max(1, Math.round(totalRead / days));
+}
+
+// Generate Book Cards (With Visual Reading Progress bars)
 function createBookCard(book) {
   const card = document.createElement('div');
   card.className = 'book-card';
@@ -552,6 +944,12 @@ function createBookCard(book) {
   const hasProgress = book.currentPage > 0 || book.lists.includes('currently-reading');
   const percent = Math.min(100, Math.round((book.currentPage / book.pages) * 100)) || 0;
   
+  const pace = getAveragePace(book);
+  const pagesLeft = book.pages - book.currentPage;
+  const estDays = Math.ceil(pagesLeft / pace);
+  const isCurrentlyReading = book.lists.includes('currently-reading');
+  const estText = (isCurrentlyReading && book.currentPage < book.pages) ? ` · Est. ${estDays}d left` : '';
+
   const hasCoverUrl = book.coverUrl && book.coverUrl.trim().length > 0;
   
   card.innerHTML = `
@@ -575,7 +973,7 @@ function createBookCard(book) {
           <div class="progress-mini-track">
             <div class="progress-mini-fill" style="width: ${percent}%; background-color: var(--accent-${book.color});"></div>
           </div>
-          <span class="progress-mini-text">${percent}%</span>
+          <span class="progress-mini-text">${percent}%${estText}</span>
         </div>
       ` : ''}
     </div>
@@ -588,44 +986,7 @@ function createBookCard(book) {
   return card;
 }
 
-// 2. RENDER EXPLORE
-function renderExplore(genreFilter = 'all') {
-  const popularRow = document.getElementById('explore-popular-row');
-  const picksRow = document.getElementById('explore-picks-row');
-  
-  popularRow.innerHTML = '';
-  picksRow.innerHTML = '';
-  
-  let popularBooks = [...books];
-  if (genreFilter !== 'all') {
-    popularBooks = popularBooks.filter(b => b.genre === genreFilter);
-  }
-  
-  let pickBooks = books.filter(b => b.rating >= 4 || b.id === 'book-tomorrow' || b.id === 'book-educated');
-  if (genreFilter !== 'all') {
-    pickBooks = pickBooks.filter(b => b.genre === genreFilter);
-  }
-
-  if (popularBooks.length === 0) {
-    popularRow.innerHTML = `<div class="empty-row-text">No books found for this genre.</div>`;
-  } else {
-    popularBooks.forEach(book => {
-      popularRow.appendChild(createBookCard(book));
-    });
-  }
-
-  if (pickBooks.length === 0) {
-    picksRow.innerHTML = `<div class="empty-row-text">No books found for this genre.</div>`;
-  } else {
-    pickBooks.forEach(book => {
-      picksRow.appendChild(createBookCard(book));
-    });
-  }
-  
-  lucide.createIcons();
-}
-
-// 3. RENDER SEARCH
+// 2. RENDER SEARCH
 function performSearch(query) {
   const categoriesGrid = document.getElementById('search-categories');
   const resultsContainer = document.getElementById('search-results-container');
@@ -653,7 +1014,7 @@ function performSearch(query) {
       <div class="empty-state-notice" style="grid-column: span 2; text-align: center; padding: 40px; color: var(--text-secondary);">
         <i data-lucide="frown" style="width: 40px; height: 40px; margin-bottom: 8px; opacity: 0.5;"></i>
         <p style="font-size: 14px; font-weight: 600;">No matches found</p>
-        <p style="font-size: 12px; opacity: 0.7; margin-top: 4px;">Try adjusting spelling or searching other keywords.</p>
+        <p style="font-size: 12px; opacity: 0.7; margin-top: 4px;">Adjust spelling or query terms.</p>
       </div>
     `;
   } else {
@@ -665,28 +1026,38 @@ function performSearch(query) {
   lucide.createIcons();
 }
 
-// 4. RENDER PROFILE
+// 3. RENDER PROFILE
 function renderProfile() {
   const profileName = document.getElementById('profile-name');
   const profileInitials = document.getElementById('profile-initials');
   const statBooks = document.getElementById('stat-books-count');
   const statPages = document.getElementById('stat-pages-count');
   const statAvg = document.getElementById('stat-avg-rating');
-  const statStreak = document.getElementById('stat-streak');
   const goalDisplay = document.getElementById('challenge-goal-display');
   const goalInput = document.getElementById('challenge-goal-input');
+  
+  // Streak metrics
+  const profileStreakCount = document.getElementById('profile-streak-count');
   
   profileName.textContent = profile.name;
   profileInitials.textContent = profile.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() || 'R';
   
   const completedBooks = books.filter(b => b.lists.includes('completed'));
-  const totalPages = books.reduce((sum, b) => sum + (parseInt(b.currentPage) || 0), 0);
+  
+  // Calculate total pages logged in history
+  const totalPagesLogged = books.reduce((sum, b) => {
+    if (b.readingLogs) {
+      return sum + b.readingLogs.reduce((s, l) => s + l.pagesLogged, 0);
+    }
+    return sum + (b.currentPage || 0);
+  }, 0);
   
   const ratedBooks = books.filter(b => b.rating > 0);
   const avgRating = ratedBooks.length > 0
     ? (ratedBooks.reduce((sum, b) => sum + b.rating, 0) / ratedBooks.length).toFixed(1)
     : '0.0';
     
+  // Check Reading Streak status
   let streakDays = profile.streak || 0;
   const today = new Date().toISOString().split('T')[0];
   
@@ -703,16 +1074,35 @@ function renderProfile() {
     }
   }
 
+  // Calculate average daily reading pace across books
+  let totalPace = 0;
+  let readingBookCounts = 0;
+  books.forEach(b => {
+    if (b.lists.includes('currently-reading')) {
+      totalPace += getAveragePace(b);
+      readingBookCounts++;
+    }
+  });
+  const avgDailyPace = readingBookCounts > 0 ? Math.round(totalPace / readingBookCounts) : 20;
+
+  // Display elements
   statBooks.textContent = completedBooks.length;
-  statPages.textContent = totalPages;
+  statPages.textContent = totalPagesLogged;
   statAvg.textContent = avgRating;
-  statStreak.textContent = `${streakDays}d`;
+  document.getElementById('stat-pace-display').textContent = avgDailyPace;
+  profileStreakCount.textContent = streakDays;
+
+  // Update profile average pace in memory for Google recommendations
+  profile.averagePace = avgDailyPace;
+  saveUserProfile(profile);
   
   const annualGoal = profile.annualGoal || 12;
   goalDisplay.textContent = annualGoal;
   goalInput.value = annualGoal;
   
   renderProgressRing(completedBooks.length, annualGoal);
+  renderHeatmapGrid();
+  renderGenreDonutChart();
 }
 
 function renderProgressRing(completed, goal) {
@@ -734,10 +1124,178 @@ function renderProgressRing(completed, goal) {
   ring.style.strokeDashoffset = offset;
 }
 
+// 4. RENDER MONTHLY HEATMAP GRID
+function renderHeatmapGrid() {
+  const grid = document.getElementById('heatmap-grid');
+  const monthLabel = document.getElementById('heatmap-month-name');
+  grid.innerHTML = '';
+
+  const now = new Date();
+  const month = now.getMonth();
+  const year = now.getFullYear();
+  
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const firstDayIndex = new Date(year, month, 1).getDay(); // weekday index (0-6)
+  const monthName = now.toLocaleString('default', { month: 'long' });
+  
+  monthLabel.textContent = `${monthName} ${year}`;
+
+  // Process logged dates across books
+  let dailyPages = {};
+  books.forEach(b => {
+    if (b.readingLogs) {
+      b.readingLogs.forEach(log => {
+        dailyPages[log.date] = (dailyPages[log.date] || 0) + log.pagesLogged;
+      });
+    }
+  });
+
+  // Align weekday headings (Sun - Sat)
+  const weekdays = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+  weekdays.forEach(day => {
+    const box = document.createElement('div');
+    box.className = 'heatmap-day-box header-day';
+    box.style.background = 'transparent';
+    box.style.border = 'none';
+    box.style.fontWeight = '800';
+    box.style.fontSize = '9px';
+    box.textContent = day;
+    grid.appendChild(box);
+  });
+
+  // Pad empty starting days of weekday
+  for (let i = 0; i < firstDayIndex; i++) {
+    const emptyBox = document.createElement('div');
+    emptyBox.className = 'heatmap-day-box empty-box';
+    emptyBox.style.opacity = '0';
+    grid.appendChild(emptyBox);
+  }
+
+  // Draw day squares
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    const loggedPages = dailyPages[dateStr] || 0;
+    
+    let level = 'level-0';
+    if (loggedPages > 40) level = 'level-3';
+    else if (loggedPages > 15) level = 'level-2';
+    else if (loggedPages > 0) level = 'level-1';
+
+    const box = document.createElement('div');
+    box.className = `heatmap-day-box ${level}`;
+    box.textContent = d;
+    box.title = `${loggedPages} pages logged on ${dateStr}`;
+    
+    grid.appendChild(box);
+  }
+}
+
+// 5. RENDER GENRE DONUT CHART
+function renderGenreDonutChart() {
+  const canvas = document.getElementById('genre-chart');
+  const legendContainer = document.getElementById('genre-chart-legend');
+  if (!canvas) return;
+
+  const ctx = canvas.getContext('2d');
+  legendContainer.innerHTML = '';
+
+  // Calculate stats
+  let genreCounts = {};
+  books.forEach(b => {
+    genreCounts[b.genre] = (genreCounts[b.genre] || 0) + 1;
+  });
+
+  const total = Object.values(genreCounts).reduce((a, b) => a + b, 0);
+
+  // Clear canvas
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  const colors = {
+    'Fiction': '#9C4362',
+    'Sci-Fi': '#2E5F8A',
+    'Self-Improvement': '#856715',
+    'Biographies': '#683F99',
+    'Mystery': '#2F6A3E',
+    'History': '#9E5124'
+  };
+
+  const borderThemeColor = darkMode ? '#161311' : '#FAF8F5';
+
+  if (total === 0) {
+    // Empty state chart
+    ctx.beginPath();
+    ctx.arc(80, 80, 70, 0, 2 * Math.PI);
+    ctx.fillStyle = '#EBEBEB';
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.arc(80, 80, 42, 0, 2 * Math.PI);
+    ctx.fillStyle = borderThemeColor;
+    ctx.fill();
+
+    legendContainer.innerHTML = `
+      <div class="legend-item">
+        <div class="legend-color-dot" style="background: #EBEBEB"></div>
+        <span>No books logged</span>
+      </div>
+    `;
+    return;
+  }
+
+  let startAngle = -Math.PI / 2;
+  
+  Object.entries(genreCounts).forEach(([genre, count]) => {
+    const share = count / total;
+    const endAngle = startAngle + (share * 2 * Math.PI);
+    const color = colors[genre] || '#7C7A78';
+
+    // Draw slice
+    ctx.beginPath();
+    ctx.moveTo(80, 80);
+    ctx.arc(80, 80, 70, startAngle, endAngle);
+    ctx.fillStyle = color;
+    ctx.fill();
+    
+    // Draw boundary border
+    ctx.strokeStyle = borderThemeColor;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    startAngle = endAngle;
+
+    // Build Legend item
+    const pct = Math.round(share * 100);
+    const item = document.createElement('div');
+    item.className = 'legend-item';
+    item.innerHTML = `
+      <div class="legend-color-dot" style="background: ${color}"></div>
+      <span>${genre}</span>
+      <span class="legend-percentage">${pct}%</span>
+    `;
+    legendContainer.appendChild(item);
+  });
+
+  // Draw Inner circle to form Donut
+  ctx.beginPath();
+  ctx.arc(80, 80, 42, 0, 2 * Math.PI);
+  ctx.fillStyle = borderThemeColor;
+  ctx.fill();
+}
+
 // SLIDE-UP DETAIL SHEETS
 function openBookDetailSheet(book) {
   selectedBookForDetail = book;
   
+  // Reset active tab to Info panel
+  tabButtons.forEach(b => {
+    if (b.dataset.tab === 'info') b.classList.add('active');
+    else b.classList.remove('active');
+  });
+  tabPanels.forEach(p => {
+    if (p.id === 'detail-panel-info') p.classList.add('active');
+    else p.classList.remove('active');
+  });
+
   const detailGenre = document.getElementById('detail-genre');
   const detailCoverImageContainer = document.getElementById('detail-cover-image-container');
   const detailCoverImage = document.getElementById('detail-cover-image');
@@ -747,8 +1305,7 @@ function openBookDetailSheet(book) {
   const detailCoverAuthor = document.getElementById('detail-cover-author');
   const detailTitle = document.getElementById('detail-title');
   const detailAuthor = document.getElementById('detail-author');
-  const detailDescription = document.getElementById('detail-description');
-  
+
   const progressPercent = document.getElementById('detail-progress-percent');
   const progressSlider = document.getElementById('detail-progress-slider');
   const progressCurrent = document.getElementById('detail-progress-current');
@@ -759,9 +1316,12 @@ function openBookDetailSheet(book) {
   detailCoverAuthor.textContent = book.author;
   detailTitle.textContent = book.title;
   detailAuthor.textContent = `by ${book.author}`;
-  detailDescription.textContent = book.description || 'No description available.';
   
-  // Choose Image Cover vs CSS Rendered Cover
+  // Fill text description
+  document.getElementById('detail-description-input').value = book.description || '';
+  document.getElementById('detail-notes-input').value = book.notes || '';
+  
+  // Cover displays
   if (book.coverUrl && book.coverUrl.trim().length > 0) {
     detailCoverImage.src = book.coverUrl;
     detailCoverImageContainer.classList.remove('hidden');
@@ -772,6 +1332,7 @@ function openBookDetailSheet(book) {
     detailCoverRendered.className = `rendered-book-cover large-cover pastel-${book.color}`;
   }
   
+  // Reading Slider Setup
   progressTotal.textContent = book.pages;
   progressCurrent.value = book.currentPage;
   
@@ -781,6 +1342,9 @@ function openBookDetailSheet(book) {
   
   populateDetailBookLists(book);
   updateStarsUI(book.rating);
+  updatePaceEstimatorUI(book);
+  renderDetailLogsList(book);
+  renderDetailQuotes(book);
 
   openSheet(sheetBookDetail);
 }
@@ -788,47 +1352,67 @@ function openBookDetailSheet(book) {
 function updateDetailProgressLive(currentPageVal) {
   if (!selectedBookForDetail) return;
   
+  const oldPage = selectedBookForDetail.currentPage;
   selectedBookForDetail.currentPage = currentPageVal;
-  const percent = Math.min(100, Math.round((currentPageVal / selectedBookForDetail.pages) * 100)) || 0;
   
+  const percent = Math.min(100, Math.round((currentPageVal / selectedBookForDetail.pages) * 100)) || 0;
   document.getElementById('detail-progress-percent').textContent = `${percent}%`;
   
+  // Log daily reading entries
+  const delta = currentPageVal - oldPage;
+  if (delta > 0) {
+    const todayStr = new Date().toISOString().split('T')[0];
+    selectedBookForDetail.readingLogs = selectedBookForDetail.readingLogs || [];
+    
+    const existingLog = selectedBookForDetail.readingLogs.find(l => l.date === todayStr);
+    if (existingLog) {
+      existingLog.pagesLogged += delta;
+    } else {
+      selectedBookForDetail.readingLogs.push({ date: todayStr, pagesLogged: delta });
+    }
+    
+    updateStreakOnRead();
+    renderDetailLogsList(selectedBookForDetail);
+  }
+
+  // Mutual exclusions shelf logic
   const currentlyReadingCheck = document.querySelector('.detail-list-opt[value="currently-reading"]');
   const wantToReadCheck = document.querySelector('.detail-list-opt[value="want-to-read"]');
   const completedCheck = document.querySelector('.detail-list-opt[value="completed"]');
+  const abandonedCheck = document.querySelector('.detail-list-opt[value="abandoned"]');
   
   if (currentPageVal === selectedBookForDetail.pages) {
     if (completedCheck && !completedCheck.checked) {
       completedCheck.checked = true;
-      if (currentlyReadingCheck) currentlyReadingCheck.checked = false;
-      if (wantToReadCheck) wantToReadCheck.checked = false;
+      uncheckDetailOptions(['currently-reading', 'want-to-read', 'abandoned']);
       selectedBookForDetail.dateCompleted = new Date().toISOString();
       updateBookListAssociationsFromChecks();
     }
   } else if (currentPageVal > 0 && currentPageVal < selectedBookForDetail.pages) {
     if (currentlyReadingCheck && !currentlyReadingCheck.checked) {
       currentlyReadingCheck.checked = true;
-      if (completedCheck) completedCheck.checked = false;
-      if (wantToReadCheck) wantToReadCheck.checked = false;
+      uncheckDetailOptions(['completed', 'want-to-read', 'abandoned']);
       updateBookListAssociationsFromChecks();
     }
   } else if (currentPageVal === 0) {
     if (wantToReadCheck && !wantToReadCheck.checked && !completedCheck.checked) {
       wantToReadCheck.checked = true;
-      if (currentlyReadingCheck) currentlyReadingCheck.checked = false;
+      uncheckDetailOptions(['currently-reading', 'completed', 'abandoned']);
       updateBookListAssociationsFromChecks();
     }
   }
 
-  // Reading streak tracking
+  saveBookDetailChanges();
+  updatePaceEstimatorUI(selectedBookForDetail);
+}
+
+function updateStreakOnRead() {
   const today = new Date().toISOString().split('T')[0];
   if (profile.lastReadDate !== today) {
     profile.streak = (profile.streak || 0) + 1;
     profile.lastReadDate = today;
     saveUserProfile(profile);
   }
-
-  saveBookDetailChanges();
 }
 
 function updateBookRating(ratingVal) {
@@ -841,13 +1425,89 @@ function updateBookRating(ratingVal) {
 function updateStarsUI(ratingVal) {
   const stars = document.querySelectorAll('#detail-stars-container .star-icon');
   stars.forEach(star => {
-    const val = parseInt(star.dataset.value);
+    const val = parseInt(star.getAttribute('data-value') || star.dataset.value);
     if (val <= ratingVal) {
       star.classList.add('active');
     } else {
       star.classList.remove('active');
     }
   });
+}
+
+function updatePaceEstimatorUI(book) {
+  const paceRate = document.getElementById('detail-pace-rate');
+  const paceTime = document.getElementById('detail-pace-time');
+  
+  if (book.currentPage >= book.pages) {
+    paceRate.textContent = '-';
+    paceTime.textContent = 'Completed!';
+    return;
+  }
+  
+  const pace = getAveragePace(book);
+  const pagesLeft = book.pages - book.currentPage;
+  const estDays = Math.ceil(pagesLeft / pace);
+  
+  paceRate.textContent = pace;
+  paceTime.textContent = `Est. ${estDays}d`;
+}
+
+// Render progress reading logs in sheet
+function renderDetailLogsList(book) {
+  const listEl = document.getElementById('detail-logs-list');
+  listEl.innerHTML = '';
+  
+  const logs = book.readingLogs || [];
+  
+  if (logs.length === 0) {
+    listEl.innerHTML = '<li class="empty-log-msg" style="color:var(--text-secondary);font-size:11px;">No pages logged yet. Slide progress bar above to write logs.</li>';
+    return;
+  }
+
+  // Reverse list order
+  [...logs].reverse().forEach(log => {
+    const li = document.createElement('li');
+    li.innerHTML = `
+      <span class="log-date">${log.date}</span>
+      <span class="log-pages">+${log.pagesLogged} pages</span>
+    `;
+    listEl.appendChild(li);
+  });
+}
+
+// Render highlighted quotes in sheet
+function renderDetailQuotes(book) {
+  const listEl = document.getElementById('detail-quotes-list');
+  listEl.innerHTML = '';
+  
+  const quotes = book.quotes || [];
+  
+  if (quotes.length === 0) {
+    listEl.innerHTML = '<li class="empty-log-msg" style="color:var(--text-secondary);font-size:11px;">No quotes saved. Type quote text above.</li>';
+    return;
+  }
+
+  quotes.forEach((q, idx) => {
+    const li = document.createElement('li');
+    li.innerHTML = `
+      <span class="quote-text-val">“${q.text}”</span>
+      <button class="btn-delete-quote" data-idx="${idx}" title="Delete Quote">
+        <i data-lucide="trash-2" style="width:12px;height:12px;"></i>
+      </button>
+    `;
+    
+    li.querySelector('.btn-delete-quote').addEventListener('click', (e) => {
+      e.stopPropagation();
+      book.quotes.splice(idx, 1);
+      saveBookDetailChanges();
+      renderDetailQuotes(book);
+      updateQuoteOfTheDay();
+      showToast("Quote deleted.");
+    });
+    
+    listEl.appendChild(li);
+  });
+  lucide.createIcons();
 }
 
 function populateAddBookLists() {
@@ -890,14 +1550,14 @@ function populateDetailBookLists(book) {
       
       if (isChecked) {
         if (val === 'completed') {
-          uncheckDetailOptions(['currently-reading', 'want-to-read']);
+          uncheckDetailOptions(['currently-reading', 'want-to-read', 'abandoned']);
           selectedBookForDetail.currentPage = selectedBookForDetail.pages;
           document.getElementById('detail-progress-current').value = selectedBookForDetail.pages;
           document.getElementById('detail-progress-slider').value = 100;
           document.getElementById('detail-progress-percent').textContent = '100%';
           selectedBookForDetail.dateCompleted = new Date().toISOString();
         } else if (val === 'currently-reading') {
-          uncheckDetailOptions(['completed', 'want-to-read']);
+          uncheckDetailOptions(['completed', 'want-to-read', 'abandoned']);
           if (selectedBookForDetail.currentPage === 0) {
             selectedBookForDetail.currentPage = 1;
             document.getElementById('detail-progress-current').value = 1;
@@ -905,11 +1565,13 @@ function populateDetailBookLists(book) {
             document.getElementById('detail-progress-percent').textContent = `${Math.round((1 / selectedBookForDetail.pages) * 100)}%`;
           }
         } else if (val === 'want-to-read') {
-          uncheckDetailOptions(['currently-reading', 'completed']);
+          uncheckDetailOptions(['currently-reading', 'completed', 'abandoned']);
           selectedBookForDetail.currentPage = 0;
           document.getElementById('detail-progress-current').value = 0;
           document.getElementById('detail-progress-slider').value = 0;
           document.getElementById('detail-progress-percent').textContent = '0%';
+        } else if (val === 'abandoned') {
+          uncheckDetailOptions(['currently-reading', 'completed', 'want-to-read']);
         }
       }
       
@@ -945,10 +1607,328 @@ function updateBookListAssociationsFromChecks() {
 function saveBookDetailChanges() {
   if (!selectedBookForDetail) return;
   
+  // Save modifications (if it isn't an API book item without real library saving)
+  if (selectedBookForDetail.id.startsWith('discover-') || selectedBookForDetail.id.startsWith('fallback-')) {
+    return;
+  }
   books = books.map(b => b.id === selectedBookForDetail.id ? selectedBookForDetail : b);
   saveBooks(books);
   
   renderActiveView();
+}
+
+// 6. UPDATE HOMESCREEN QUOTE OF THE DAY
+function updateQuoteOfTheDay() {
+  const quoteText = document.getElementById('quote-text');
+  const quoteAuthor = document.getElementById('quote-author');
+  
+  // Fetch quotes lists
+  let userQuotes = [];
+  books.forEach(b => {
+    if (b.quotes && b.quotes.length > 0) {
+      b.quotes.forEach(q => {
+        userQuotes.push({ text: q.text, author: b.title });
+      });
+    }
+  });
+
+  if (userQuotes.length > 0) {
+    const randomQuote = userQuotes[Math.floor(Math.random() * userQuotes.length)];
+    quoteText.textContent = `“${randomQuote.text}”`;
+    quoteAuthor.textContent = `— From: ${randomQuote.author}`;
+  } else {
+    const randomQuote = FAMOUS_QUOTES[Math.floor(Math.random() * FAMOUS_QUOTES.length)];
+    quoteText.textContent = `“${randomQuote.text}”`;
+    quoteAuthor.textContent = `— ${randomQuote.author}`;
+  }
+}
+
+// 7. RENDER INSTAGRAM STORY CANVAS RENDERER (Share Shelf Modal)
+function renderShareCanvas() {
+  const canvas = document.getElementById('share-canvas');
+  const canvasPreview = document.getElementById('share-canvas-preview');
+  if (!canvas || !canvasPreview) return;
+
+  const ctx = canvas.getContext('2d');
+  
+  // Theme styling configurations
+  const lightBgGrad1 = '#FAF9F6';
+  const lightBgGrad2 = '#EBE7DD';
+  const darkBgGrad1 = '#0F0E0C';
+  const darkBgGrad2 = '#1C1915';
+  
+  const bgGrad1 = darkMode ? darkBgGrad1 : lightBgGrad1;
+  const bgGrad2 = darkMode ? darkBgGrad2 : lightBgGrad2;
+  
+  const textMainColor = darkMode ? '#FAF7F2' : '#1A1612';
+  const textSubColor = darkMode ? '#A09587' : '#6E6458';
+
+  // 1. Draw background gradient wallpaper
+  const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+  gradient.addColorStop(0, bgGrad1);
+  gradient.addColorStop(1, bgGrad2);
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // 2. Draw ambient blurry background color spots
+  ctx.save();
+  ctx.globalAlpha = darkMode ? 0.08 : 0.15;
+  ctx.fillStyle = '#93C6F7'; // blue spot
+  ctx.beginPath();
+  ctx.arc(200, 400, 350, 0, 2 * Math.PI);
+  ctx.fill();
+  
+  ctx.fillStyle = '#F8ADC4'; // pink spot
+  ctx.beginPath();
+  ctx.arc(880, 1500, 400, 0, 2 * Math.PI);
+  ctx.fill();
+  ctx.restore();
+
+  // 3. Draw clean border borders framing
+  ctx.strokeStyle = textMainColor;
+  ctx.lineWidth = 14;
+  ctx.strokeRect(40, 40, canvas.width - 80, canvas.height - 80);
+
+  // 4. Draw Header Title
+  ctx.textAlign = 'center';
+  ctx.fillStyle = textMainColor;
+  
+  // App Title
+  ctx.font = 'bold 72px "Playfair Display", Georgia, serif';
+  ctx.fillText('Shelf Control', canvas.width / 2, 180);
+  
+  // Tagline
+  ctx.font = 'italic 32px "Playfair Display", Georgia, serif';
+  ctx.fillStyle = textSubColor;
+  ctx.fillText('“because your books won\'t control themselves”', canvas.width / 2, 235);
+
+  // 5. Draw Profile details card
+  ctx.fillStyle = darkMode ? 'rgba(22, 19, 17, 0.65)' : 'rgba(255, 255, 255, 0.45)';
+  ctx.strokeStyle = darkMode ? 'rgba(255,255,255,0.06)' : 'rgba(0, 0, 0, 0.05)';
+  ctx.lineWidth = 4;
+  
+  // Rounded rect
+  roundRect(ctx, 100, 320, canvas.width - 200, 300, 32, true, true);
+  
+  // Reader Name heading
+  ctx.fillStyle = textMainColor;
+  ctx.font = '800 48px "Outfit", sans-serif';
+  ctx.fillText(profile.name, canvas.width / 2, 420);
+  
+  // Streak metrics
+  ctx.fillStyle = '#E26E2F';
+  ctx.font = 'bold 36px "Outfit", sans-serif';
+  ctx.fillText(`🔥 ${profile.streak || 0} DAY STREAK`, canvas.width / 2, 480);
+  
+  // Annual Challenge sub
+  ctx.fillStyle = textSubColor;
+  ctx.font = '600 28px "Outfit", sans-serif';
+  const completedBooks = books.filter(b => b.lists.includes('completed'));
+  ctx.fillText(`Goal Progress: ${completedBooks.length} of ${profile.annualGoal || 12} books read`, canvas.width / 2, 540);
+
+  // 6. Draw circular motivational Ring charts
+  const ratio = Math.min(1, completedBooks.length / (profile.annualGoal || 12));
+  ctx.save();
+  ctx.translate(canvas.width / 2, 800);
+  
+  // Circle BG track
+  ctx.strokeStyle = darkMode ? 'rgba(255, 255, 255, 0.08)' : 'rgba(26, 22, 18, 0.08)';
+  ctx.lineWidth = 20;
+  ctx.beginPath();
+  ctx.arc(0, 0, 100, 0, 2 * Math.PI);
+  ctx.stroke();
+  
+  // Circular arc progress
+  ctx.strokeStyle = textMainColor;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.arc(0, 0, 100, -Math.PI / 2, (-Math.PI / 2) + (ratio * 2 * Math.PI));
+  ctx.stroke();
+  
+  // Center Text labels
+  ctx.fillStyle = textMainColor;
+  ctx.font = 'bold 54px "Playfair Display", Georgia, serif';
+  ctx.fillText(`${Math.round(ratio * 100)}%`, 0, 18);
+  ctx.restore();
+
+  // Draw statistics badge labels below ring
+  ctx.fillStyle = textSubColor;
+  ctx.font = '700 24px "Outfit", sans-serif';
+  ctx.fillText('CHALLENGE COMPLETION', canvas.width / 2, 970);
+
+  // 7. Draw Books Grid showcase
+  ctx.fillStyle = textMainColor;
+  ctx.font = 'bold 42px "Playfair Display", Georgia, serif';
+  ctx.fillText('Top Shelved Books', canvas.width / 2, 1100);
+
+  // Draw 3 top book cover representations using CSS canvas colors
+  const topBooks = books.slice(0, 3);
+  const startX = 150;
+  const cardWidth = 220;
+  const cardHeight = 330;
+  const spacing = 60;
+  
+  const colorsMap = {
+    'blue': '#D6E6F5',
+    'pink': '#F8DEE6',
+    'yellow': '#FAF0D2',
+    'green': '#DAF0DC',
+    'purple': '#EBEEFA',
+    'peach': '#FCE2D2'
+  };
+
+  topBooks.forEach((book, idx) => {
+    const x = startX + idx * (cardWidth + spacing);
+    const y = 1180;
+    
+    // Draw card shadows and rect
+    ctx.save();
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.15)';
+    ctx.shadowBlur = 24;
+    ctx.shadowOffsetY = 16;
+    
+    ctx.fillStyle = colorsMap[book.color] || '#DCDCDC';
+    roundRect(ctx, x, y, cardWidth, cardHeight, 18, true, false);
+    ctx.restore();
+
+    // Draw Book spine left highlight
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.08)';
+    ctx.fillRect(x, y, 16, cardHeight);
+    
+    // Draw Title Text inside cover card
+    ctx.fillStyle = darkMode ? '#1A1612' : '#1A1612'; // keep cover text dark for contrast
+    ctx.font = 'bold 24px "Playfair Display", Georgia, serif';
+    ctx.textAlign = 'left';
+    
+    // Multi line title drawer helper
+    wrapCanvasText(ctx, book.title, x + 30, y + 60, cardWidth - 50, 32, 4);
+    
+    // Draw Author Text at bottom
+    ctx.font = '800 16px "Outfit", sans-serif';
+    ctx.fillText(book.author.toUpperCase(), x + 30, y + cardHeight - 35, cardWidth - 50);
+  });
+
+  // Footer branding tag
+  ctx.textAlign = 'center';
+  ctx.fillStyle = textSubColor;
+  ctx.font = '700 24px "Outfit", sans-serif';
+  ctx.fillText('shelfcontrol.app', canvas.width / 2, 1830);
+
+  // 8. Draw Preview scaling onto canvas preview elements
+  const previewCtx = canvasPreview.getContext('2d');
+  previewCtx.drawImage(canvas, 0, 0, canvasPreview.width, canvasPreview.height);
+}
+
+// Canvas Rounded rectangle drawer helper
+function roundRect(ctx, x, y, width, height, radius, fill, stroke) {
+  ctx.beginPath();
+  ctx.moveTo(x + radius, y);
+  ctx.lineTo(x + width - radius, y);
+  ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+  ctx.lineTo(x + width, y + height - radius);
+  ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+  ctx.lineTo(x + radius, y + height);
+  ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+  ctx.lineTo(x, y + radius);
+  ctx.quadraticCurveTo(x, y, x + radius, y);
+  ctx.closePath();
+  if (fill) ctx.fill();
+  if (stroke) ctx.stroke();
+}
+
+// Canvas text wrap utility
+function wrapCanvasText(ctx, text, x, y, maxWidth, lineHeight, maxLines) {
+  const words = text.split(' ');
+  let line = '';
+  let lineCount = 0;
+
+  for (let n = 0; n < words.length; n++) {
+    const testLine = line + words[n] + ' ';
+    const metrics = ctx.measureText(testLine);
+    const testWidth = metrics.width;
+    if (testWidth > maxWidth && n > 0) {
+      ctx.fillText(line, x, y);
+      line = words[n] + ' ';
+      y += lineHeight;
+      lineCount++;
+      if (lineCount >= maxLines - 1) {
+        ctx.fillText(line.trim() + '...', x, y);
+        return;
+      }
+    } else {
+      line = testLine;
+    }
+  }
+  ctx.fillText(line, x, y);
+}
+
+// 8. SCHEDULER: DAILY REMINDERS ALARM
+function checkReadingReminders() {
+  if (!profile || !profile.reminderEnabled) return;
+  
+  const now = new Date();
+  const todayStr = now.toISOString().split('T')[0];
+  
+  // Trigger once daily
+  if (profile.lastReminderSentDate === todayStr) return;
+  
+  const [remHour, remMin] = profile.reminderTime.split(':').map(Number);
+  if (now.getHours() > remHour || (now.getHours() === remHour && now.getMinutes() >= remMin)) {
+    if (Notification.permission === 'granted') {
+      new Notification("📚 Shelf Control Daily Reminder", {
+        body: `Hey ${profile.name}! It's time for your daily reading challenge. Let's flip some pages!`,
+        icon: 'https://covers.openlibrary.org/b/isbn/9780593465066-M.jpg'
+      });
+      profile.lastReminderSentDate = todayStr;
+      saveUserProfile(profile);
+    }
+  }
+}
+
+// Premium Toast alert system
+function showToast(msg) {
+  const oldToast = document.querySelector('.premium-toast');
+  if (oldToast) oldToast.remove();
+
+  const toast = document.createElement('div');
+  toast.className = 'premium-toast glass';
+  
+  // Apply style parameters in script to avoid stylesheet breaking
+  Object.assign(toast.style, {
+    position: 'fixed',
+    bottom: '100px',
+    left: '50%',
+    transform: 'translateX(-50%) translateY(20px)',
+    padding: '12px 20px',
+    borderRadius: '16px',
+    zIndex: '9999',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    fontSize: '13px',
+    fontWeight: '700',
+    color: 'var(--text-primary)',
+    boxShadow: 'var(--shadow-md)',
+    opacity: '0',
+    transition: 'all 0.35s cubic-bezier(0.16, 1, 0.3, 1)'
+  });
+
+  toast.innerHTML = `<i data-lucide="sparkles" style="color:var(--accent-yellow)"></i> <span>${msg}</span>`;
+  document.body.appendChild(toast);
+  lucide.createIcons();
+  
+  // Animate in
+  setTimeout(() => {
+    toast.style.opacity = '1';
+    toast.style.transform = 'translateX(-50%) translateY(0)';
+  }, 50);
+  
+  // Remove out
+  setTimeout(() => {
+    toast.style.opacity = '0';
+    toast.style.transform = 'translateX(-50%) translateY(-20px)';
+    setTimeout(() => toast.remove(), 400);
+  }, 2600);
 }
 
 // MODAL CONTROLLERS
