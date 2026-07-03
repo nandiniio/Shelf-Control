@@ -24,21 +24,18 @@ Shelf Control helps you keep track of your reading goals, discover your next fav
 ---
 
 ## 🛠 Built With
-* React
- 
-* Vite
 
-* JavaScript
-
-* HTML
-
-* CSS
+- React Native
+- Expo
+- Expo Router
+- React
+- TypeScript
 ---
 
 ## 🚀 Run Locally
 npm install
 
-npm run dev
+npm start
 
 ---
 
