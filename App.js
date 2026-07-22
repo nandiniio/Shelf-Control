@@ -1,34 +1,70 @@
 import {
-  getBooks,
-  saveBooks,
-  getLists,
-  saveLists,
-  getUserProfile,
-  saveUserProfile,
-  clearAllData,
-  initializeStorage,
   FAMOUS_QUOTES
 } from './data.js';
+import {
+  debounce,
+  searchOpenLibrary,
+  enrichBookWithDetails,
+  SEARCH_DEBOUNCE_MS
+} from './openLibrary.js';
+import {
+  signUp,
+  signIn,
+  signOut,
+  getSession,
+  onAuthStateChange,
+  getDisplayName
+} from './auth.js';
+import {
+  fetchLists,
+  createList,
+  renameList,
+  deleteList,
+  fetchSavedBooks,
+  saveBookToList,
+  removeSavedBook,
+  removeSavedBookFromList,
+  getListBookCounts,
+  followUser,
+  unfollowUser,
+  isFollowing,
+  getFollowers,
+  getFollowing,
+  getFollowCounts,
+  findUserByEmail
+} from './database.js';
 
 // Application State
+let currentUser = null;
 let books = [];
 let lists = [];
+let listBookCounts = {};
 let profile = null;
 let currentActiveView = 'home';
 let selectedBookForDetail = null;
+let pendingSaveBook = null;
+let currentListSubview = null;
+let viewedUserProfile = null;
 let darkMode = false;
+let searchRequestId = 0;
+let addBookSearchRequestId = 0;
+let detailBookInitialListIds = new Set();
+let detailListSaveInProgress = false;
 
 // DOM Elements
-const onboardingScreen = document.getElementById('onboarding-screen');
+
 const appContainer = document.getElementById('app-container');
+const onboardingScreen = document.getElementById('onboarding-screen');
+const signinForm = document.getElementById('signin-form');
 const signupForm = document.getElementById('signup-form');
 const signupNameInput = document.getElementById('signup-name');
-const signupGoalInput = document.getElementById('signup-goal');
-const signupGenreInput = document.getElementById('signup-genre');
+const authErrorEl = document.getElementById('auth-error');
+const authTabSignin = document.getElementById('auth-tab-signin');
+const authTabSignup = document.getElementById('auth-tab-signup');
 
 const headerUsername = document.getElementById('header-username');
 const btnThemeToggle = document.getElementById('btn-theme-toggle');
-const bottomNavbar = document.querySelector('.bottom-navbar');
+const sidebarNavbar = document.querySelector('.sidebar-navbar');
 const navItems = document.querySelectorAll('.nav-item');
 const appViews = document.querySelectorAll('.app-view');
 
@@ -37,6 +73,8 @@ const modalCreateList = document.getElementById('modal-create-list');
 const sheetAddBook = document.getElementById('sheet-add-book');
 const sheetBookDetail = document.getElementById('sheet-book-detail');
 const modalShareShelf = document.getElementById('modal-share-shelf');
+const modalSaveToList = document.getElementById('modal-save-to-list');
+const modalRenameList = document.getElementById('modal-rename-list');
 
 // Profile Settings Elements
 const btnToggleSettings = document.getElementById('btn-toggle-settings');
@@ -60,38 +98,133 @@ document.addEventListener('DOMContentLoaded', () => {
   initApp();
 });
 
-function initApp() {
-  profile = getUserProfile();
-  
-  // Theme check
+function showAuthError(message) {
+  authErrorEl.textContent = message;
+  authErrorEl.classList.remove('hidden');
+}
+
+function hideAuthError() {
+  authErrorEl.textContent = '';
+  authErrorEl.classList.add('hidden');
+}
+
+function isAuthenticated() {
+  return !!currentUser;
+}
+
+function requireAuth(actionLabel = 'do that') {
+  if (isAuthenticated()) return true;
+  showToast(`Please sign in to ${actionLabel}.`);
+  showLoginScreen();
+  return false;
+}
+
+function showLoginScreen() {
+  onboardingScreen.classList.add('onboarding-active');
+  onboardingScreen.classList.remove('onboarding-hidden');
+  appContainer.classList.add('app-hidden');
+  hideAuthError();
+}
+
+function showAppScreen() {
+  onboardingScreen.classList.add('onboarding-hidden');
+  onboardingScreen.classList.remove('onboarding-active');
+  appContainer.classList.remove('app-hidden');
+}
+
+function getProfileStorageKey() {
+  return currentUser ? `shelf_control_profile_${currentUser.id}` : 'shelf_control_profile';
+}
+
+function loadLocalProfile() {
+  const stored = localStorage.getItem(getProfileStorageKey());
+  if (stored) return JSON.parse(stored);
+
+  return {
+    name: getDisplayName(currentUser),
+    annualGoal: 12,
+    favoriteGenre: 'Fiction',
+    streak: 0,
+    lastReadDate: '',
+    reminderEnabled: false,
+    reminderTime: '20:00',
+    lastReminderSentDate: ''
+  };
+}
+
+function saveLocalProfile() {
+  if (!profile) return;
+  localStorage.setItem(getProfileStorageKey(), JSON.stringify(profile));
+}
+
+async function loadUserData() {
+  if (!currentUser) return;
+
+  profile = loadLocalProfile();
+  profile.name = profile.name || getDisplayName(currentUser);
+
+  const [listsResult, booksResult, countsResult] = await Promise.all([
+    fetchLists(currentUser.id),
+    fetchSavedBooks(currentUser.id),
+    getListBookCounts(currentUser.id)
+  ]);
+
+  if (listsResult.error) showToast(listsResult.error);
+  if (booksResult.error) showToast(booksResult.error);
+  if (countsResult.error) showToast(countsResult.error);
+
+  lists = listsResult.lists;
+  books = booksResult.books;
+  listBookCounts = countsResult.counts;
+
+  if (lists.length === 0) {
+    await new Promise(resolve => setTimeout(resolve, 800));
+    const retry = await fetchLists(currentUser.id);
+    if (!retry.error) lists = retry.lists;
+  }
+
+  updateHeader();
+  renderActiveView();
+  updateQuoteOfTheDay();
+}
+
+async function handleAuthenticatedUser(user) {
+  currentUser = user;
+  showAppScreen();
+  await loadUserData();
+}
+
+async function initApp() {
   const savedDarkMode = localStorage.getItem('shelf_control_dark_mode') === 'true';
   setTheme(savedDarkMode);
 
-  if (!profile) {
-    // Show signup onboarding guard
-    onboardingScreen.classList.add('onboarding-active');
-    onboardingScreen.classList.remove('onboarding-hidden');
-    appContainer.classList.add('app-hidden');
+  const { session, error } = await getSession();
+  if (error) showToast(error);
+
+  if (session?.user) {
+    await handleAuthenticatedUser(session.user);
   } else {
-    // Skip to app
-    onboardingScreen.classList.add('onboarding-hidden');
-    onboardingScreen.classList.remove('onboarding-active');
-    appContainer.classList.remove('app-hidden');
-    
-    // Load states
-    books = getBooks();
-    lists = getLists();
-    
-    updateHeader();
-    renderActiveView();
-    updateQuoteOfTheDay();
+    showLoginScreen();
   }
-  
+
+  onAuthStateChange(async (session) => {
+    if (session?.user) {
+      if (!currentUser || currentUser.id !== session.user.id) {
+        await handleAuthenticatedUser(session.user);
+      }
+    } else {
+      currentUser = null;
+      lists = [];
+      books = [];
+      listBookCounts = {};
+      profile = null;
+      showLoginScreen();
+    }
+  });
+
   setupEventListeners();
   setupDragAndDrop();
   lucide.createIcons();
-  
-  // Start Notifications Check Loop
   setInterval(checkReadingReminders, 60000);
 }
 
@@ -260,41 +393,11 @@ function createDiscoverCard(apiBook) {
   const addBtn = card.querySelector('.discover-card-add-btn');
   addBtn.addEventListener('click', (e) => {
     e.stopPropagation();
-    
-    if (books.some(b => b.title.toLowerCase() === apiBook.title.toLowerCase())) {
+    if (bookIsInLibrary(apiBook)) {
       showToast('Book already in library!');
       return;
     }
-
-    const newBook = {
-      id: 'book-' + Date.now(),
-      title: apiBook.title,
-      author: apiBook.author,
-      pages: apiBook.pages,
-      currentPage: 0,
-      rating: 0,
-      lists: ['want-to-read'],
-      color: apiBook.color,
-      genre: apiBook.genre,
-      description: apiBook.description,
-      coverUrl: apiBook.coverUrl,
-      dateAdded: new Date().toISOString(),
-      readingLogs: [],
-      quotes: [],
-      notes: ''
-    };
-
-    books.push(newBook);
-    saveBooks(books);
-    
-    addBtn.classList.add('added');
-    addBtn.innerHTML = '<i data-lucide="check"></i>';
-    lucide.createIcons();
-    
-    showToast(`Added "${apiBook.title}" to Want to Read!`);
-    
-    // Increment streak on add as a friendly trigger
-    updateStreakOnRead();
+    promptSaveBookToList(apiBook);
   });
 
   card.addEventListener('click', () => {
@@ -327,40 +430,69 @@ function setupEventListeners() {
     setTheme(!darkMode);
   });
 
-  // Signup Onboarding Submit
-  signupForm.addEventListener('submit', (e) => {
+  // Auth tab switching
+  authTabSignin.addEventListener('click', () => {
+    authTabSignin.classList.add('active');
+    authTabSignup.classList.remove('active');
+    signinForm.classList.remove('hidden');
+    signupForm.classList.add('hidden');
+    hideAuthError();
+  });
+
+  authTabSignup.addEventListener('click', () => {
+    authTabSignup.classList.add('active');
+    authTabSignin.classList.remove('active');
+    signupForm.classList.remove('hidden');
+    signinForm.classList.add('hidden');
+    hideAuthError();
+  });
+
+  signinForm.addEventListener('submit', async (e) => {
     e.preventDefault();
+    hideAuthError();
+    const email = document.getElementById('signin-email').value.trim();
+    const password = document.getElementById('signin-password').value;
+    const btn = document.getElementById('btn-signin');
+    btn.disabled = true;
+
+    const { user, error } = await signIn(email, password);
+    btn.disabled = false;
+
+    if (error) {
+      showAuthError(error);
+      return;
+    }
+
+    if (user) {
+      await handleAuthenticatedUser(user);
+      switchView('home');
+    }
+  });
+
+  signupForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    hideAuthError();
     const name = signupNameInput.value.trim();
-    const goal = parseInt(signupGoalInput.value) || 12;
-    const favoriteGenre = signupGenreInput.value;
-    const librarySetupOption = document.querySelector('input[name="signup-library-option"]:checked').value;
-    
-    const startWithSample = librarySetupOption === 'sample';
-    initializeStorage(startWithSample);
-    
-    profile = {
-      name: name,
-      annualGoal: goal,
-      favoriteGenre: favoriteGenre,
-      streak: 1,
-      lastReadDate: new Date().toISOString().split('T')[0],
-      reminderEnabled: false,
-      reminderTime: '20:00',
-      lastReminderSentDate: ''
-    };
-    
-    saveUserProfile(profile);
-    books = getBooks();
-    lists = getLists();
-    
-    updateHeader();
-    
-    onboardingScreen.classList.add('onboarding-hidden');
-    onboardingScreen.classList.remove('onboarding-active');
-    appContainer.classList.remove('app-hidden');
-    
-    switchView('home');
-    updateQuoteOfTheDay();
+    const email = document.getElementById('signup-email').value.trim();
+    const password = document.getElementById('signup-password').value;
+    const btn = document.getElementById('btn-signup');
+    btn.disabled = true;
+
+    const { user, session, error } = await signUp(email, password, { name });
+    btn.disabled = false;
+
+    if (error) {
+      showAuthError(error);
+      return;
+    }
+
+    if (session?.user || user) {
+      showToast('Account created! Welcome to Shelf Control.');
+      await handleAuthenticatedUser(session?.user || user);
+      switchView('home');
+    } else {
+      showAuthError('Check your email to confirm your account, then sign in.');
+    }
   });
 
   // Tab switching links
@@ -373,10 +505,12 @@ function setupEventListeners() {
 
   // Action Buttons clicks
   document.getElementById('btn-create-list').addEventListener('click', () => {
+    if (!requireAuth('create lists')) return;
     openModal(modalCreateList);
   });
-  
+
   document.getElementById('btn-add-book').addEventListener('click', () => {
+    if (!requireAuth('add books')) return;
     openSheet(sheetAddBook);
     populateAddBookLists();
   });
@@ -390,7 +524,8 @@ function setupEventListeners() {
     closeSheet(sheetAddBook);
   });
   
-  document.getElementById('btn-close-book-detail').addEventListener('click', () => {
+  document.getElementById('btn-close-book-detail').addEventListener('click', async () => {
+    await saveDetailBookListChanges();
     closeSheet(sheetBookDetail);
   });
 
@@ -398,86 +533,169 @@ function setupEventListeners() {
     closeModal(modalShareShelf);
   });
 
+  document.getElementById('btn-close-save-to-list').addEventListener('click', () => {
+    closeModal(modalSaveToList);
+    pendingSaveBook = null;
+  });
+
+  document.getElementById('btn-close-rename-list').addEventListener('click', () => {
+    closeModal(modalRenameList);
+  });
+
   // Create Custom List Form
-  document.getElementById('create-list-form').addEventListener('submit', (e) => {
+  document.getElementById('create-list-form').addEventListener('submit', async (e) => {
     e.preventDefault();
+    if (!requireAuth('create lists')) return;
+
     const title = document.getElementById('list-name').value.trim();
     const color = document.querySelector('input[name="list-color"]:checked').value;
-    
-    const newList = {
-      id: 'list-' + Date.now(),
-      title: '📁 ' + title,
-      color: color,
-      isSystem: false
-    };
-    
-    lists.push(newList);
-    saveLists(lists);
+
+    const { list, error } = await createList(currentUser.id, title, 'folder', color);
+    if (error) {
+      showToast(error);
+      return;
+    }
+
+    lists.push(list);
     closeModal(modalCreateList);
     document.getElementById('create-list-form').reset();
-    
     renderHome();
+    showToast(`Created list "${title}"`);
   });
 
   // Add Book Modal form
-  document.getElementById('add-book-form').addEventListener('submit', (e) => {
+  document.getElementById('add-book-form').addEventListener('submit', async (e) => {
     e.preventDefault();
+    if (!requireAuth('add books')) return;
+
     const title = document.getElementById('book-title').value.trim();
     const author = document.getElementById('book-author').value.trim();
-    const pages = parseInt(document.getElementById('book-pages').value);
     const genre = document.getElementById('book-genre').value;
     const description = document.getElementById('book-description').value.trim();
-    const color = document.querySelector('input[name="book-color"]:checked').value;
-    
+    const coverUrl = document.getElementById('book-cover-url').value.trim();
+
     const checkedBoxes = document.querySelectorAll('#add-book-lists-checkboxes input:checked');
-    const assignedLists = Array.from(checkedBoxes).map(box => box.value);
-    
-    if (assignedLists.length === 0) {
-      assignedLists.push('want-to-read');
+    const assignedListIds = Array.from(checkedBoxes).map(box => box.value);
+
+    if (assignedListIds.length === 0) {
+      const wantList = lists.find(l => l.title === 'Want to Read' || l.title.includes('Want to Read'));
+      if (wantList) assignedListIds.push(wantList.id);
     }
 
-    const isCompleted = assignedLists.includes('completed');
-
-    const newBook = {
-      id: 'book-' + Date.now(),
-      title: title,
-      author: author,
-      pages: pages,
-      currentPage: isCompleted ? pages : 0,
-      rating: 0,
-      lists: assignedLists,
-      color: color,
-      genre: genre,
+    const bookPayload = {
+      title,
+      author,
+      coverUrl,
       description: description || 'No summary available.',
-      coverUrl: '',
-      dateAdded: new Date().toISOString(),
-      readingLogs: [],
-      quotes: [],
-      notes: ''
+      isbn: ''
     };
 
-    if (isCompleted) {
-      newBook.dateCompleted = new Date().toISOString();
-      newBook.readingLogs.push({ date: new Date().toISOString().split('T')[0], pagesLogged: pages });
+    let addedCount = 0;
+    for (const listId of assignedListIds) {
+      const { book, error } = await saveBookToList(currentUser.id, listId, bookPayload);
+
+      if (error) {
+        showToast(error);
+        return;
+      }
+
+      if (book && !books.some(b => b.id === book.id)) {
+        books.push(book);
+        listBookCounts[listId] = (listBookCounts[listId] || 0) + 1;
+        addedCount += 1;
+      }
     }
 
-    books.push(newBook);
-    saveBooks(books);
-    
+    if (addedCount === 0) {
+      showToast('This book is already in the selected lists.');
+      return;
+    }
+
     closeSheet(sheetAddBook);
     document.getElementById('add-book-form').reset();
-    
-    renderActiveView();
+    document.getElementById('book-cover-url').value = '';
+    document.getElementById('search-online-results').classList.add('hidden');
 
-    // Background cover fetch
-    fetchBookCover(title, author).then(coverUrl => {
-      if (coverUrl) {
-        newBook.coverUrl = coverUrl;
-        books = books.map(b => b.id === newBook.id ? newBook : b);
-        saveBooks(books);
-        renderActiveView();
+    renderActiveView();
+    showToast(`Added "${title}" to your shelf!`);
+  });
+
+  // Open Library search in Add Book sheet (debounced)
+  const bookSearchInput = document.getElementById('book-search-online');
+  const bookSearchResults = document.getElementById('search-online-results');
+
+  async function searchOpenLibraryForAddBook(query) {
+    const requestId = ++addBookSearchRequestId;
+
+    if (!query || query.length < 2) {
+      bookSearchResults.classList.add('hidden');
+      bookSearchResults.innerHTML = '';
+      return;
+    }
+
+    bookSearchResults.innerHTML = '<div class="search-result-status">Searching Open Library…</div>';
+    bookSearchResults.classList.remove('hidden');
+
+    try {
+      const results = await searchOpenLibrary(query, 6);
+      if (requestId !== addBookSearchRequestId) return;
+
+      bookSearchResults.innerHTML = '';
+      if (results.length === 0) {
+        bookSearchResults.innerHTML = '<div class="search-result-status">No books found. Try a different title or author.</div>';
+        return;
       }
+
+      results.forEach(book => {
+        const itemEl = createAddBookSearchResultItem(book);
+        bookSearchResults.appendChild(itemEl);
+      });
+    } catch (err) {
+      if (requestId !== addBookSearchRequestId) return;
+      bookSearchResults.innerHTML = '<div class="search-result-status search-result-error">Could not reach Open Library. Please fill in the details manually.</div>';
+    }
+  }
+
+  function createAddBookSearchResultItem(book) {
+    const initials = book.title.split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase();
+    const itemEl = document.createElement('div');
+    itemEl.className = 'book-search-result-item';
+    itemEl.innerHTML = `
+      ${book.coverUrl
+        ? `<img src="${book.coverUrl}" alt="${book.title}" class="book-result-thumb" onerror="this.style.display='none'">`
+        : `<div class="book-result-thumb-placeholder">${initials}</div>`
+      }
+      <div class="book-result-meta">
+        <div class="book-result-title">${book.title}</div>
+        <div class="book-result-author">${book.author}</div>
+      </div>
+    `;
+    itemEl.addEventListener('click', () => {
+      document.getElementById('book-title').value = book.title;
+      document.getElementById('book-author').value = book.author;
+      document.getElementById('book-pages').value = book.pages || 300;
+      document.getElementById('book-description').value = book.description.slice(0, 500);
+      const genreSelect = document.getElementById('book-genre');
+      [...genreSelect.options].forEach(opt => {
+        opt.selected = opt.value === book.genre;
+      });
+      document.getElementById('book-cover-url').value = book.coverUrl;
+      bookSearchResults.classList.add('hidden');
+      bookSearchInput.value = '';
     });
+    return itemEl;
+  }
+
+  const debouncedAddBookSearch = debounce((query) => {
+    searchOpenLibraryForAddBook(query);
+  }, SEARCH_DEBOUNCE_MS);
+
+  bookSearchInput.addEventListener('input', () => {
+    debouncedAddBookSearch(bookSearchInput.value.trim());
+  });
+
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('#sheet-add-book')) bookSearchResults.classList.add('hidden');
   });
 
   // Back from details subview list
@@ -487,40 +705,67 @@ function setupEventListeners() {
   });
 
   // Delete List button trigger
-  document.getElementById('btn-delete-list').addEventListener('click', () => {
+  document.getElementById('btn-delete-list').addEventListener('click', async () => {
+    if (!requireAuth('delete lists')) return;
     const listId = document.getElementById('btn-delete-list').dataset.targetListId;
     const listObj = lists.find(l => l.id === listId);
-    
-    if (!listObj || listObj.isSystem) return;
-    
-    if (confirm(`Are you sure you want to delete the list "${listObj.title}"? Books inside won't be deleted.`)) {
-      // Remove List ID association from all books
-      books = books.map(b => {
-        b.lists = b.lists.filter(l => l !== listId);
-        // Fallback default list check
-        if (b.lists.length === 0) {
-          b.lists.push('want-to-read');
-        }
-        return b;
-      });
-      saveBooks(books);
-      
-      // Filter out list
+
+    if (!listObj || listObj.isSystem) {
+      showToast('Default lists cannot be deleted.');
+      return;
+    }
+
+    if (confirm(`Are you sure you want to delete the list "${listObj.title}"? Books in this list will also be removed.`)) {
+      const { error } = await deleteList(listId);
+      if (error) {
+        showToast(error);
+        return;
+      }
+
+      books = books.filter(b => b.listId !== listId);
+      delete listBookCounts[listId];
       lists = lists.filter(l => l.id !== listId);
-      saveLists(lists);
-      
+
       document.getElementById('list-books-subview').classList.add('hidden');
       document.getElementById('lists-container').classList.remove('hidden');
       renderHome();
+      showToast('List deleted.');
     }
+  });
+
+  document.getElementById('btn-rename-list').addEventListener('click', () => {
+    if (!currentListSubview || currentListSubview.isSystem) return;
+    document.getElementById('rename-list-name').value = currentListSubview.title;
+    openModal(modalRenameList);
+  });
+
+  document.getElementById('rename-list-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!requireAuth('rename lists') || !currentListSubview) return;
+
+    const newName = document.getElementById('rename-list-name').value.trim();
+    const { list, error } = await renameList(currentListSubview.id, newName);
+
+    if (error) {
+      showToast(error);
+      return;
+    }
+
+    lists = lists.map(l => l.id === list.id ? list : l);
+    currentListSubview = list;
+    closeModal(modalRenameList);
+    openListBooksSubview(list);
+    renderHome();
+    showToast('List renamed.');
   });
 
   // Profile - Edit Goal
   document.getElementById('btn-update-goal').addEventListener('click', () => {
+    if (!requireAuth('update your goal')) return;
     const inputVal = parseInt(document.getElementById('challenge-goal-input').value);
     if (inputVal > 0) {
       profile.annualGoal = inputVal;
-      saveUserProfile(profile);
+      saveLocalProfile();
       renderProfile();
       showToast(`Annual challenge goal set to ${inputVal} books!`);
     }
@@ -565,40 +810,64 @@ function setupEventListeners() {
           profile.reminderEnabled = false;
           reminderToggle.checked = false;
         }
-        saveUserProfile(profile);
+        saveLocalProfile();
       });
     } else {
-      saveUserProfile(profile);
+      saveLocalProfile();
     }
-    
+
     updateHeader();
     renderProfile();
-    
+
     profileSettingsSection.classList.add('hidden');
     document.querySelector('.profile-actions-grid').classList.remove('hidden');
   });
 
-  // Profile - Clear Data Reset
-  document.getElementById('btn-reset-data').addEventListener('click', () => {
-    if (confirm('Are you sure you want to sign out? This deletes your streaks, reading history logs, and quotes.')) {
-      clearAllData();
-      location.reload();
+  // User lookup & follow
+  document.getElementById('btn-user-lookup').addEventListener('click', () => {
+    lookupUserByEmail();
+  });
+
+  document.getElementById('user-lookup-email').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') lookupUserByEmail();
+  });
+
+  // Profile - Sign Out
+  document.getElementById('btn-reset-data').addEventListener('click', async () => {
+    if (confirm('Sign out of Shelf Control?')) {
+      const { error } = await signOut();
+      if (error) {
+        showToast(error);
+        return;
+      }
+      currentUser = null;
+      lists = [];
+      books = [];
+      listBookCounts = {};
+      profile = null;
+      showLoginScreen();
+      showToast('Signed out successfully.');
     }
   });
 
-  // Search input typing
+  // Search input typing (Open Library, debounced)
   const searchInput = document.getElementById('search-input');
   const searchClearBtn = document.getElementById('search-clear-btn');
-  
+
+  const debouncedOpenLibrarySearch = debounce((query) => {
+    performSearch(query);
+  }, SEARCH_DEBOUNCE_MS);
+
   searchInput.addEventListener('input', () => {
     const val = searchInput.value.trim();
     if (val.length > 0) {
       searchClearBtn.classList.remove('hidden');
-      performSearch(val);
+      debouncedOpenLibrarySearch(val);
     } else {
       searchClearBtn.classList.add('hidden');
       document.getElementById('search-results-container').classList.add('hidden');
       document.getElementById('search-categories').classList.remove('hidden');
+      hideSearchStatusMessage();
     }
   });
 
@@ -607,14 +876,24 @@ function setupEventListeners() {
     searchClearBtn.classList.add('hidden');
     document.getElementById('search-results-container').classList.add('hidden');
     document.getElementById('search-categories').classList.remove('hidden');
+    hideSearchStatusMessage();
   });
 
   document.querySelectorAll('.search-cat-card').forEach(card => {
     card.addEventListener('click', () => {
       const targetGenre = card.dataset.searchGenre;
+      const subjectMap = {
+        'Fiction': 'fiction',
+        'Sci-Fi': 'science fiction',
+        'Self-Improvement': 'self-help',
+        'Biographies': 'biography',
+        'Mystery': 'mystery',
+        'History': 'history'
+      };
+      const query = `subject:${subjectMap[targetGenre] || targetGenre.toLowerCase()}`;
       searchInput.value = targetGenre;
       searchClearBtn.classList.remove('hidden');
-      performSearch(targetGenre);
+      performSearch(query);
     });
   });
 
@@ -731,14 +1010,44 @@ function setupEventListeners() {
     updateQuoteOfTheDay();
   });
 
+  // Open Library API preview actions
+  document.getElementById('btn-add-api-to-library').addEventListener('click', () => {
+    if (selectedBookForDetail) {
+      promptSaveBookToList(selectedBookForDetail);
+    }
+  });
+
+  document.getElementById('btn-add-api-to-favorites').addEventListener('click', () => {
+    if (!selectedBookForDetail) return;
+    const favoritesList = lists.find(l => l.title === 'Favorites' || l.title.includes('Favorites'));
+    if (favoritesList) {
+      saveApiBookToList(selectedBookForDetail, favoritesList.id);
+    } else {
+      promptSaveBookToList(selectedBookForDetail);
+    }
+  });
+
   // Delete Book
-  document.getElementById('btn-delete-book').addEventListener('click', () => {
-    if (confirm(`Remove "${selectedBookForDetail.title}" from your library?`)) {
+  document.getElementById('btn-delete-book').addEventListener('click', async () => {
+    if (!requireAuth('remove books') || !selectedBookForDetail) return;
+    if (confirm(`Remove "${selectedBookForDetail.title}" from this list?`)) {
+      const listId = selectedBookForDetail.listId;
+      const { error } = await removeSavedBook(selectedBookForDetail.id);
+
+      if (error) {
+        showToast(error);
+        return;
+      }
+
       books = books.filter(b => b.id !== selectedBookForDetail.id);
-      saveBooks(books);
+      if (listId) {
+        listBookCounts[listId] = Math.max(0, (listBookCounts[listId] || 1) - 1);
+      }
+
       closeSheet(sheetBookDetail);
       renderActiveView();
       updateQuoteOfTheDay();
+      showToast('Book removed from list.');
     }
   });
 }
@@ -766,11 +1075,7 @@ function setupDragAndDrop() {
 
   container.addEventListener('drop', (e) => {
     e.preventDefault();
-    const reorderedIds = [...container.querySelectorAll('.list-card')].map(card => card.dataset.listId);
-    
-    // Sort lists to match this order
-    lists.sort((a, b) => reorderedIds.indexOf(a.id) - reorderedIds.indexOf(b.id));
-    saveLists(lists);
+    // Visual reorder only — list order is managed in Supabase by name/default flag
   });
 }
 
@@ -804,9 +1109,8 @@ function switchView(viewId) {
 }
 
 function renderActiveView() {
-  books = getBooks();
-  lists = getLists();
-  profile = getUserProfile();
+  if (!isAuthenticated()) return;
+  profile = loadLocalProfile();
 
   switch (currentActiveView) {
     case 'home':
@@ -830,8 +1134,204 @@ function renderActiveView() {
 }
 
 function updateHeader() {
-  if (profile) {
-    headerUsername.textContent = profile.name;
+  if (profile && currentUser) {
+    headerUsername.textContent = profile.name || getDisplayName(currentUser);
+  }
+}
+
+function getListBookCount(listId) {
+  return listBookCounts[listId] || books.filter(b => b.listId === listId).length;
+}
+
+function bookIsInLibrary(apiBook) {
+  return books.some(b =>
+    b.title.toLowerCase() === apiBook.title.toLowerCase() &&
+    b.author.toLowerCase() === apiBook.author.toLowerCase()
+  );
+}
+
+function promptSaveBookToList(apiBook) {
+  if (!requireAuth('save books')) return;
+
+  if (bookIsInLibrary(apiBook)) {
+    showToast('This book is already in your library!');
+    return;
+  }
+
+  pendingSaveBook = apiBook;
+  document.getElementById('save-to-list-book-title').textContent = apiBook.title;
+  const optionsEl = document.getElementById('save-to-list-options');
+  const errorEl = document.getElementById('save-to-list-error');
+  errorEl.classList.add('hidden');
+  optionsEl.innerHTML = '';
+
+  if (lists.length === 0) {
+    errorEl.textContent = 'No lists found yet. Try refreshing in a moment.';
+    errorEl.classList.remove('hidden');
+  } else {
+    lists.forEach(list => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = `save-to-list-option pastel-${list.color} animate-btn`;
+      btn.innerHTML = `
+        <i data-lucide="${list.icon || 'folder'}"></i>
+        <span>${list.title}</span>
+      `;
+      btn.addEventListener('click', () => saveApiBookToList(apiBook, list.id));
+      optionsEl.appendChild(btn);
+    });
+  }
+
+  openModal(modalSaveToList);
+  lucide.createIcons();
+}
+
+async function saveApiBookToList(apiBook, listId) {
+  if (!requireAuth('save books')) return;
+
+  const { book, error } = await saveBookToList(currentUser.id, listId, apiBook);
+
+  if (error) {
+    document.getElementById('save-to-list-error').textContent = error;
+    document.getElementById('save-to-list-error').classList.remove('hidden');
+    return;
+  }
+
+  books.push(book);
+  listBookCounts[listId] = (listBookCounts[listId] || 0) + 1;
+
+  const listName = lists.find(l => l.id === listId)?.title || 'your list';
+  closeModal(modalSaveToList);
+  pendingSaveBook = null;
+
+  showToast(`Added "${book.title}" to ${listName}!`);
+
+  selectedBookForDetail = { ...book, isApiPreview: false };
+  openBookDetailSheet(selectedBookForDetail);
+  renderActiveView();
+}
+
+async function lookupUserByEmail() {
+  if (!requireAuth('find readers')) return;
+
+  const email = document.getElementById('user-lookup-email').value.trim();
+  const resultEl = document.getElementById('user-lookup-result');
+
+  if (!email) {
+    showToast('Enter an email address to search.');
+    return;
+  }
+
+  resultEl.classList.remove('hidden');
+  resultEl.innerHTML = '<p class="lookup-status">Searching…</p>';
+
+  const { user, error } = await findUserByEmail(email);
+
+  if (error || !user) {
+    resultEl.innerHTML = `<p class="lookup-error">${error || 'No reader found.'}</p>`;
+    return;
+  }
+
+  if (user.id === currentUser.id) {
+    resultEl.innerHTML = '<p class="lookup-status">That\'s you! Share your email so others can follow you.</p>';
+    return;
+  }
+
+  viewedUserProfile = user;
+  await renderUserLookupResult(user, resultEl);
+}
+
+async function renderUserLookupResult(user, container) {
+  const { following, error: followError } = await isFollowing(currentUser.id, user.id);
+  if (followError) {
+    container.innerHTML = `<p class="lookup-error">${followError}</p>`;
+    return;
+  }
+
+  const { followers, following: followingCount, error: countError } = await getFollowCounts(user.id);
+  if (countError) {
+    container.innerHTML = `<p class="lookup-error">${countError}</p>`;
+    return;
+  }
+
+  container.innerHTML = `
+    <div class="lookup-user-card glass">
+      <div class="lookup-user-info">
+        <strong>${user.name}</strong>
+        <span>${user.email}</span>
+        <span class="lookup-follow-counts">${followers} followers · ${followingCount} following</span>
+      </div>
+      <button type="button" id="btn-follow-toggle" class="btn-primary animate-btn">
+        ${following ? 'Unfollow' : 'Follow'}
+      </button>
+    </div>
+  `;
+
+  container.querySelector('#btn-follow-toggle').addEventListener('click', async () => {
+    const btn = container.querySelector('#btn-follow-toggle');
+    btn.disabled = true;
+
+    if (following) {
+      const { error } = await unfollowUser(currentUser.id, user.id);
+      if (error) {
+        showToast(error);
+        btn.disabled = false;
+        return;
+      }
+      showToast(`Unfollowed ${user.name}.`);
+    } else {
+      const { error } = await followUser(currentUser.id, user.id);
+      if (error) {
+        showToast(error);
+        btn.disabled = false;
+        return;
+      }
+      showToast(`Now following ${user.name}!`);
+    }
+
+    await renderUserLookupResult(user, container);
+    renderProfileFollowStats();
+  });
+}
+
+async function renderProfileFollowStats() {
+  if (!currentUser) return;
+
+  const followersEl = document.getElementById('stat-followers-count');
+  const followingEl = document.getElementById('stat-following-count');
+  const followersListEl = document.getElementById('followers-list');
+  const followingListEl = document.getElementById('following-list');
+
+  const { followers, following, error } = await getFollowCounts(currentUser.id);
+  if (error) {
+    showToast(error);
+    return;
+  }
+
+  followersEl.textContent = followers;
+  followingEl.textContent = following;
+
+  const [followersResult, followingResult] = await Promise.all([
+    getFollowers(currentUser.id),
+    getFollowing(currentUser.id)
+  ]);
+
+  if (followersResult.userIds.length > 0) {
+    document.getElementById('followers-list-section').classList.remove('hidden');
+    followersListEl.innerHTML = followersResult.userIds
+      .map(id => `<li>Reader ${id.slice(0, 8)}…</li>`)
+      .join('');
+  } else {
+    document.getElementById('followers-list-section').classList.add('hidden');
+  }
+
+  if (followingResult.userIds.length > 0) {
+    document.getElementById('following-list-section').classList.remove('hidden');
+    followingListEl.innerHTML = followingResult.userIds
+      .map(id => `<li>Reader ${id.slice(0, 8)}…</li>`)
+      .join('');
+  } else {
+    document.getElementById('following-list-section').classList.add('hidden');
   }
 }
 
@@ -839,18 +1339,10 @@ function updateHeader() {
 function renderHome() {
   const container = document.getElementById('lists-container');
   container.innerHTML = '';
-  
-  const listIcons = {
-    'currently-reading': 'book-open',
-    'want-to-read': 'bookmark',
-    'completed': 'check-circle',
-    'abandoned': 'x-circle',
-    'favorites': 'heart'
-  };
 
   lists.forEach(list => {
-    const count = books.filter(b => b.lists.includes(list.id)).length;
-    const iconName = listIcons[list.id] || 'folder';
+    const count = getListBookCount(list.id);
+    const iconName = list.icon || 'folder';
 
     const card = document.createElement('div');
     card.className = `list-card pastel-${list.color} animate-btn`;
@@ -885,28 +1377,32 @@ function renderHome() {
 }
 
 function openListBooksSubview(list) {
+  currentListSubview = list;
   const listsContainer = document.getElementById('lists-container');
   const subview = document.getElementById('list-books-subview');
   const subviewTitle = document.getElementById('subview-list-title');
   const subviewCount = document.getElementById('subview-list-count');
   const subviewGrid = document.getElementById('list-books-grid');
   const deleteBtn = document.getElementById('btn-delete-list');
-  
+  const renameBtn = document.getElementById('btn-rename-list');
+
   listsContainer.classList.add('hidden');
   subview.classList.remove('hidden');
-  
+
   subviewTitle.textContent = list.title;
-  
-  // Show delete option for custom lists only
+
   if (list.isSystem) {
     deleteBtn.classList.add('hidden');
+    renameBtn.classList.add('hidden');
   } else {
     deleteBtn.classList.remove('hidden');
+    renameBtn.classList.remove('hidden');
     deleteBtn.dataset.targetListId = list.id;
   }
 
-  const listBooks = books.filter(b => b.lists.includes(list.id));
+  const listBooks = books.filter(b => b.listId === list.id);
   subviewCount.textContent = `${listBooks.length} ${listBooks.length === 1 ? 'book' : 'books'}`;
+  listBookCounts[list.id] = listBooks.length;
   
   subviewGrid.innerHTML = '';
   
@@ -941,13 +1437,14 @@ function createBookCard(book) {
   const card = document.createElement('div');
   card.className = 'book-card';
   
-  const hasProgress = book.currentPage > 0 || book.lists.includes('currently-reading');
+  const hasProgress = book.currentPage > 0;
   const percent = Math.min(100, Math.round((book.currentPage / book.pages) * 100)) || 0;
-  
+
   const pace = getAveragePace(book);
   const pagesLeft = book.pages - book.currentPage;
   const estDays = Math.ceil(pagesLeft / pace);
-  const isCurrentlyReading = book.lists.includes('currently-reading');
+  const readingList = getListByNameFragment('Currently Reading');
+  const isCurrentlyReading = readingList && book.listId === readingList.id;
   const estText = (isCurrentlyReading && book.currentPage < book.pages) ? ` · Est. ${estDays}d left` : '';
 
   const hasCoverUrl = book.coverUrl && book.coverUrl.trim().length > 0;
@@ -986,43 +1483,153 @@ function createBookCard(book) {
   return card;
 }
 
-// 2. RENDER SEARCH
-function performSearch(query) {
+// 2. RENDER SEARCH (Open Library)
+function showSearchStatusMessage(message, isError = false) {
+  const statusEl = document.getElementById('search-status-message');
+  statusEl.textContent = message;
+  statusEl.classList.remove('hidden', 'search-status-error', 'search-status-loading');
+  statusEl.classList.add(isError ? 'search-status-error' : 'search-status-loading');
+}
+
+function hideSearchStatusMessage() {
+  const statusEl = document.getElementById('search-status-message');
+  statusEl.classList.add('hidden');
+  statusEl.textContent = '';
+}
+
+function truncateText(text, maxLen = 140) {
+  if (!text || text.length <= maxLen) return text || '';
+  return text.slice(0, maxLen).trim() + '…';
+}
+
+function createApiSearchResultCard(apiBook) {
+  const card = document.createElement('div');
+  card.className = 'api-search-result-card animate-btn';
+  const initials = apiBook.title.split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase();
+  const inLibrary = books.some(b =>
+    b.title.toLowerCase() === apiBook.title.toLowerCase() &&
+    b.author.toLowerCase() === apiBook.author.toLowerCase()
+  );
+
+  card.innerHTML = `
+    <div class="api-result-cover">
+      ${apiBook.coverUrl
+        ? `<img src="${apiBook.coverUrl}" alt="${apiBook.title}" class="api-result-cover-img" loading="lazy" onerror="this.parentElement.innerHTML='<div class=\\'api-result-cover-placeholder\\'>${initials}</div>'">`
+        : `<div class="api-result-cover-placeholder">${initials}</div>`
+      }
+    </div>
+    <div class="api-result-body">
+      <div class="api-result-header">
+        <h4 class="api-result-title">${apiBook.title}</h4>
+        ${inLibrary ? '<span class="api-result-badge">In Library</span>' : ''}
+      </div>
+      <p class="api-result-author">${apiBook.author}</p>
+      <p class="api-result-desc">${truncateText(apiBook.description)}</p>
+    </div>
+    <i data-lucide="chevron-right" class="api-result-chevron"></i>
+  `;
+
+  card.addEventListener('click', () => openApiBookDetail(apiBook));
+  return card;
+}
+
+async function openApiBookDetail(apiBook) {
+  openBookDetailSheet({ ...apiBook, isApiPreview: true });
+
+  const descInput = document.getElementById('detail-description-input');
+  descInput.value = 'Loading full description…';
+  descInput.readOnly = true;
+
+  try {
+    const enriched = await enrichBookWithDetails(apiBook);
+    if (selectedBookForDetail && selectedBookForDetail.id === apiBook.id) {
+      selectedBookForDetail.description = enriched.description;
+      selectedBookForDetail.publishDate = enriched.publishDate;
+      descInput.value = enriched.description || 'No description available.';
+      document.getElementById('detail-publish-date').textContent = enriched.publishDate || 'Unknown';
+    }
+  } catch {
+    if (selectedBookForDetail && selectedBookForDetail.id === apiBook.id) {
+      descInput.value = apiBook.description || 'No description available.';
+    }
+  }
+}
+
+function getListByNameFragment(fragment) {
+  return lists.find(l => l.title === fragment || l.title.includes(fragment));
+}
+
+function getBooksInListName(fragment) {
+  const list = getListByNameFragment(fragment);
+  if (!list) return [];
+  return books.filter(b => b.listId === list.id);
+}
+
+function addBookFromApi(apiBook, targetLists) {
+  promptSaveBookToList(apiBook);
+}
+
+async function performSearch(query) {
   const categoriesGrid = document.getElementById('search-categories');
   const resultsContainer = document.getElementById('search-results-container');
   const resultsGrid = document.getElementById('search-results-grid');
   const resultsHeader = document.getElementById('search-results-header');
-  
+  const requestId = ++searchRequestId;
+
   categoriesGrid.classList.add('hidden');
   resultsContainer.classList.remove('hidden');
   resultsGrid.innerHTML = '';
-  
-  const lowerQuery = query.toLowerCase();
-  const matchedBooks = books.filter(book => {
-    return (
-      book.title.toLowerCase().includes(lowerQuery) ||
-      book.author.toLowerCase().includes(lowerQuery) ||
-      book.genre.toLowerCase().includes(lowerQuery) ||
-      book.description.toLowerCase().includes(lowerQuery)
-    );
-  });
-  
-  resultsHeader.textContent = `Search Results (${matchedBooks.length})`;
-  
-  if (matchedBooks.length === 0) {
+  resultsHeader.textContent = 'Searching…';
+  showSearchStatusMessage('Searching Open Library…');
+
+  if (query.length < 2) {
+    hideSearchStatusMessage();
+    resultsHeader.textContent = 'Search Results';
     resultsGrid.innerHTML = `
-      <div class="empty-state-notice" style="grid-column: span 2; text-align: center; padding: 40px; color: var(--text-secondary);">
-        <i data-lucide="frown" style="width: 40px; height: 40px; margin-bottom: 8px; opacity: 0.5;"></i>
-        <p style="font-size: 14px; font-weight: 600;">No matches found</p>
-        <p style="font-size: 12px; opacity: 0.7; margin-top: 4px;">Adjust spelling or query terms.</p>
+      <div class="search-empty-state">
+        <i data-lucide="search"></i>
+        <p>Type at least 2 characters to search.</p>
       </div>
     `;
-  } else {
-    matchedBooks.forEach(book => {
-      resultsGrid.appendChild(createBookCard(book));
-    });
+    lucide.createIcons();
+    return;
   }
-  
+
+  try {
+    const results = await searchOpenLibrary(query, 12);
+    if (requestId !== searchRequestId) return;
+
+    hideSearchStatusMessage();
+    resultsHeader.textContent = `Search Results (${results.length})`;
+
+    if (results.length === 0) {
+      resultsGrid.innerHTML = `
+        <div class="search-empty-state">
+          <i data-lucide="book-x"></i>
+          <p>No books found for "${query}"</p>
+          <span>Try a different title, author, or spelling.</span>
+        </div>
+      `;
+    } else {
+      results.forEach(book => {
+        resultsGrid.appendChild(createApiSearchResultCard(book));
+      });
+    }
+  } catch (error) {
+    if (requestId !== searchRequestId) return;
+
+    hideSearchStatusMessage();
+    resultsHeader.textContent = 'Search Results';
+    resultsGrid.innerHTML = `
+      <div class="search-empty-state search-empty-error">
+        <i data-lucide="wifi-off"></i>
+        <p>Could not reach Open Library</p>
+        <span>Check your connection and try again.</span>
+      </div>
+    `;
+    console.error('Open Library search failed:', error);
+  }
+
   lucide.createIcons();
 }
 
@@ -1041,8 +1648,15 @@ function renderProfile() {
   
   profileName.textContent = profile.name;
   profileInitials.textContent = profile.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() || 'R';
-  
-  const completedBooks = books.filter(b => b.lists.includes('completed'));
+
+  const profileEmail = document.getElementById('profile-email');
+  if (profileEmail && currentUser) {
+    profileEmail.textContent = currentUser.email;
+  }
+
+  renderProfileFollowStats();
+
+  const completedBooks = getBooksInListName('Completed');
   
   // Calculate total pages logged in history
   const totalPagesLogged = books.reduce((sum, b) => {
@@ -1070,31 +1684,29 @@ function renderProfile() {
     if (diffDays > 1) {
       streakDays = 0;
       profile.streak = 0;
-      saveUserProfile(profile);
+      saveLocalProfile();
     }
   }
 
-  // Calculate average daily reading pace across books
+  const currentlyReadingList = getListByNameFragment('Currently Reading');
   let totalPace = 0;
   let readingBookCounts = 0;
   books.forEach(b => {
-    if (b.lists.includes('currently-reading')) {
+    if (currentlyReadingList && b.listId === currentlyReadingList.id) {
       totalPace += getAveragePace(b);
       readingBookCounts++;
     }
   });
   const avgDailyPace = readingBookCounts > 0 ? Math.round(totalPace / readingBookCounts) : 20;
 
-  // Display elements
   statBooks.textContent = completedBooks.length;
   statPages.textContent = totalPagesLogged;
   statAvg.textContent = avgRating;
   document.getElementById('stat-pace-display').textContent = avgDailyPace;
   profileStreakCount.textContent = streakDays;
 
-  // Update profile average pace in memory for Google recommendations
   profile.averagePace = avgDailyPace;
-  saveUserProfile(profile);
+  saveLocalProfile();
   
   const annualGoal = profile.annualGoal || 12;
   goalDisplay.textContent = annualGoal;
@@ -1316,9 +1928,39 @@ function openBookDetailSheet(book) {
   detailCoverAuthor.textContent = book.author;
   detailTitle.textContent = book.title;
   detailAuthor.textContent = `by ${book.author}`;
+
+  const isApiPreview = book.isApiPreview === true;
+  const metadataSection = document.getElementById('detail-metadata-section');
+  const apiActions = document.getElementById('detail-api-actions');
+  const deleteBtn = document.getElementById('btn-delete-book');
+  const descInput = document.getElementById('detail-description-input');
+  const listsSection = document.getElementById('detail-lists-checkboxes')?.closest('.detail-section');
+  const ratingSection = document.getElementById('detail-stars-container')?.closest('.detail-section');
+
+  if (isApiPreview) {
+    metadataSection.classList.remove('hidden');
+    apiActions.classList.remove('hidden');
+    deleteBtn.classList.add('hidden');
+    if (listsSection) listsSection.classList.add('hidden');
+    if (ratingSection) ratingSection.classList.add('hidden');
+    document.getElementById('detail-isbn').textContent = book.isbn || 'Not available';
+    document.getElementById('detail-publish-date').textContent = book.publishDate || 'Unknown';
+    descInput.readOnly = true;
+  } else {
+    metadataSection.classList.toggle('hidden', !book.isbn && !book.publishDate);
+    apiActions.classList.add('hidden');
+    deleteBtn.classList.remove('hidden');
+    if (listsSection) listsSection.classList.remove('hidden');
+    if (ratingSection) ratingSection.classList.remove('hidden');
+    if (book.isbn || book.publishDate) {
+      document.getElementById('detail-isbn').textContent = book.isbn || '—';
+      document.getElementById('detail-publish-date').textContent = book.publishDate || '—';
+    }
+    descInput.readOnly = false;
+  }
   
   // Fill text description
-  document.getElementById('detail-description-input').value = book.description || '';
+  descInput.value = book.description || '';
   document.getElementById('detail-notes-input').value = book.notes || '';
   
   // Cover displays
@@ -1341,12 +1983,20 @@ function openBookDetailSheet(book) {
   progressSlider.value = percent;
   
   populateDetailBookLists(book);
-  updateStarsUI(book.rating);
+  updateStarsUI(book.rating || 0);
   updatePaceEstimatorUI(book);
   renderDetailLogsList(book);
   renderDetailQuotes(book);
 
+  if (isApiPreview) {
+    document.querySelectorAll('.detail-tab-btn[data-tab="progress"]').forEach(b => b.classList.add('hidden'));
+    document.querySelectorAll('.detail-tab-btn[data-tab="quotes"]').forEach(b => b.classList.add('hidden'));
+  } else {
+    document.querySelectorAll('.detail-tab-btn').forEach(b => b.classList.remove('hidden'));
+  }
+
   openSheet(sheetBookDetail);
+  lucide.createIcons();
 }
 
 function updateDetailProgressLive(currentPageVal) {
@@ -1375,29 +2025,32 @@ function updateDetailProgressLive(currentPageVal) {
     renderDetailLogsList(selectedBookForDetail);
   }
 
-  // Mutual exclusions shelf logic
-  const currentlyReadingCheck = document.querySelector('.detail-list-opt[value="currently-reading"]');
-  const wantToReadCheck = document.querySelector('.detail-list-opt[value="want-to-read"]');
-  const completedCheck = document.querySelector('.detail-list-opt[value="completed"]');
-  const abandonedCheck = document.querySelector('.detail-list-opt[value="abandoned"]');
-  
-  if (currentPageVal === selectedBookForDetail.pages) {
+  // Auto-assign status lists based on reading progress
+  const completedList = getListByNameFragment('Completed');
+  const currentlyReadingList = getListByNameFragment('Currently Reading');
+  const wantToReadList = getListByNameFragment('Want to Read');
+
+  if (currentPageVal === selectedBookForDetail.pages && completedList) {
+    const completedCheck = document.querySelector(`.detail-list-opt[value="${completedList.id}"]`);
     if (completedCheck && !completedCheck.checked) {
       completedCheck.checked = true;
-      uncheckDetailOptions(['currently-reading', 'want-to-read', 'abandoned']);
+      uncheckStatusListsExcept('Completed');
       selectedBookForDetail.dateCompleted = new Date().toISOString();
       updateBookListAssociationsFromChecks();
     }
-  } else if (currentPageVal > 0 && currentPageVal < selectedBookForDetail.pages) {
+  } else if (currentPageVal > 0 && currentPageVal < selectedBookForDetail.pages && currentlyReadingList) {
+    const currentlyReadingCheck = document.querySelector(`.detail-list-opt[value="${currentlyReadingList.id}"]`);
     if (currentlyReadingCheck && !currentlyReadingCheck.checked) {
       currentlyReadingCheck.checked = true;
-      uncheckDetailOptions(['completed', 'want-to-read', 'abandoned']);
+      uncheckStatusListsExcept('Currently Reading');
       updateBookListAssociationsFromChecks();
     }
-  } else if (currentPageVal === 0) {
-    if (wantToReadCheck && !wantToReadCheck.checked && !completedCheck.checked) {
+  } else if (currentPageVal === 0 && wantToReadList && completedList) {
+    const wantToReadCheck = document.querySelector(`.detail-list-opt[value="${wantToReadList.id}"]`);
+    const completedCheck = document.querySelector(`.detail-list-opt[value="${completedList.id}"]`);
+    if (wantToReadCheck && !wantToReadCheck.checked && completedCheck && !completedCheck.checked) {
       wantToReadCheck.checked = true;
-      uncheckDetailOptions(['currently-reading', 'completed', 'abandoned']);
+      uncheckStatusListsExcept('Want to Read');
       updateBookListAssociationsFromChecks();
     }
   }
@@ -1411,7 +2064,7 @@ function updateStreakOnRead() {
   if (profile.lastReadDate !== today) {
     profile.streak = (profile.streak || 0) + 1;
     profile.lastReadDate = today;
-    saveUserProfile(profile);
+    saveLocalProfile();
   }
 }
 
@@ -1510,18 +2163,42 @@ function renderDetailQuotes(book) {
   lucide.createIcons();
 }
 
+function booksMatch(a, b) {
+  if (a.isbn && b.isbn && a.isbn.trim() && a.isbn === b.isbn) {
+    return true;
+  }
+  return (
+    a.title.toLowerCase() === b.title.toLowerCase() &&
+    a.author.toLowerCase() === b.author.toLowerCase()
+  );
+}
+
+function getMatchingSavedBooks(book) {
+  return books.filter(b => booksMatch(b, book));
+}
+
+function getCheckedDetailListIds() {
+  const container = document.getElementById('detail-lists-checkboxes');
+  if (!container) return new Set();
+  return new Set(
+    Array.from(container.querySelectorAll('input:checked')).map(input => input.value)
+  );
+}
+
 function populateAddBookLists() {
   const container = document.getElementById('add-book-lists-checkboxes');
   container.innerHTML = '';
-  
+
+  const wantList = getListByNameFragment('Want to Read');
+
   lists.forEach(list => {
     const label = document.createElement('label');
     label.className = 'checkbox-option';
-    
-    const isChecked = list.id === 'want-to-read';
-    
+
+    const isChecked = wantList ? list.id === wantList.id : false;
+
     label.innerHTML = `
-      <input type="checkbox" value="${list.id}" ${isChecked ? 'checked' : ''}>
+      <input type="checkbox" name="add-book-list" value="${list.id}" ${isChecked ? 'checked' : ''}>
       <span>${list.title}</span>
     `;
     container.appendChild(label);
@@ -1531,89 +2208,152 @@ function populateAddBookLists() {
 function populateDetailBookLists(book) {
   const container = document.getElementById('detail-lists-checkboxes');
   container.innerHTML = '';
-  
+
+  const matchingBooks = getMatchingSavedBooks(book);
+  const checkedListIds = new Set(matchingBooks.map(b => b.listId).filter(Boolean));
+  detailBookInitialListIds = new Set(checkedListIds);
+
   lists.forEach(list => {
     const label = document.createElement('label');
     label.className = 'checkbox-option';
-    
-    const isChecked = book.lists.includes(list.id);
-    
+
+    const isChecked = checkedListIds.has(list.id);
+
     label.innerHTML = `
       <input type="checkbox" class="detail-list-opt" value="${list.id}" ${isChecked ? 'checked' : ''}>
       <span>${list.title}</span>
     `;
-    
+
     const checkbox = label.querySelector('input');
     checkbox.addEventListener('change', () => {
-      const val = checkbox.value;
-      const isChecked = checkbox.checked;
-      
-      if (isChecked) {
-        if (val === 'completed') {
-          uncheckDetailOptions(['currently-reading', 'want-to-read', 'abandoned']);
-          selectedBookForDetail.currentPage = selectedBookForDetail.pages;
-          document.getElementById('detail-progress-current').value = selectedBookForDetail.pages;
-          document.getElementById('detail-progress-slider').value = 100;
-          document.getElementById('detail-progress-percent').textContent = '100%';
-          selectedBookForDetail.dateCompleted = new Date().toISOString();
-        } else if (val === 'currently-reading') {
-          uncheckDetailOptions(['completed', 'want-to-read', 'abandoned']);
-          if (selectedBookForDetail.currentPage === 0) {
-            selectedBookForDetail.currentPage = 1;
-            document.getElementById('detail-progress-current').value = 1;
-            document.getElementById('detail-progress-slider').value = Math.round((1 / selectedBookForDetail.pages) * 100);
-            document.getElementById('detail-progress-percent').textContent = `${Math.round((1 / selectedBookForDetail.pages) * 100)}%`;
-          }
-        } else if (val === 'want-to-read') {
-          uncheckDetailOptions(['currently-reading', 'completed', 'abandoned']);
-          selectedBookForDetail.currentPage = 0;
-          document.getElementById('detail-progress-current').value = 0;
-          document.getElementById('detail-progress-slider').value = 0;
-          document.getElementById('detail-progress-percent').textContent = '0%';
-        } else if (val === 'abandoned') {
-          uncheckDetailOptions(['currently-reading', 'completed', 'want-to-read']);
-        }
-      }
-      
-      updateBookListAssociationsFromChecks();
+      if (!requireAuth('update lists') || !selectedBookForDetail) return;
+      saveDetailBookListChanges();
     });
 
     container.appendChild(label);
   });
 }
 
-function uncheckDetailOptions(ids) {
-  ids.forEach(id => {
-    const opt = document.querySelector(`.detail-list-opt[value="${id}"]`);
-    if (opt) opt.checked = false;
+async function saveDetailBookListChanges() {
+  if (!selectedBookForDetail || !currentUser || detailListSaveInProgress) return;
+  if (selectedBookForDetail.isApiPreview) return;
+  if (
+    selectedBookForDetail.id?.startsWith('discover-') ||
+    selectedBookForDetail.id?.startsWith('fallback-')
+  ) {
+    return;
+  }
+
+  const currentListIds = getCheckedDetailListIds();
+  const toAdd = [...currentListIds].filter(id => !detailBookInitialListIds.has(id));
+  const toRemove = [...detailBookInitialListIds].filter(id => !currentListIds.has(id));
+
+  if (toAdd.length === 0 && toRemove.length === 0) {
+    saveBookDetailChanges();
+    return;
+  }
+
+  detailListSaveInProgress = true;
+
+  const bookPayload = {
+    title: selectedBookForDetail.title,
+    author: selectedBookForDetail.author,
+    coverUrl: selectedBookForDetail.coverUrl,
+    isbn: selectedBookForDetail.isbn,
+    description: selectedBookForDetail.description
+  };
+
+  for (const listId of toAdd) {
+    const { book, error } = await saveBookToList(currentUser.id, listId, bookPayload);
+    if (error) {
+      showToast(error);
+      populateDetailBookLists(selectedBookForDetail);
+      detailListSaveInProgress = false;
+      return;
+    }
+
+    if (book && !books.some(b => b.id === book.id)) {
+      books.push({ ...selectedBookForDetail, ...book, listId: book.listId });
+      listBookCounts[listId] = (listBookCounts[listId] || 0) + 1;
+    }
+  }
+
+  for (const listId of toRemove) {
+    const savedRow = getMatchingSavedBooks(selectedBookForDetail).find(b => b.listId === listId);
+    const { error } = savedRow
+      ? await removeSavedBook(savedRow.id)
+      : await removeSavedBookFromList(currentUser.id, listId, bookPayload);
+
+    if (error) {
+      showToast(error);
+      populateDetailBookLists(selectedBookForDetail);
+      detailListSaveInProgress = false;
+      return;
+    }
+
+    books = books.filter(b => !(booksMatch(b, selectedBookForDetail) && b.listId === listId));
+    listBookCounts[listId] = Math.max(0, (listBookCounts[listId] || 1) - 1);
+  }
+
+  detailBookInitialListIds = new Set(currentListIds);
+
+  if (toRemove.includes(selectedBookForDetail.listId)) {
+    const remaining = getMatchingSavedBooks(selectedBookForDetail);
+    if (remaining.length === 0) {
+      detailListSaveInProgress = false;
+      renderActiveView();
+      closeSheet(sheetBookDetail);
+      showToast('Book removed from all selected lists.');
+      return;
+    }
+    selectedBookForDetail = { ...remaining[0] };
+  }
+
+  detailListSaveInProgress = false;
+  saveBookDetailChanges();
+
+  if (toAdd.length > 0 || toRemove.length > 0) {
+    const message =
+      toAdd.length > 0 && toRemove.length > 0
+        ? 'List assignments updated.'
+        : toAdd.length > 0
+          ? `Added to ${toAdd.length} list${toAdd.length === 1 ? '' : 's'}.`
+          : `Removed from ${toRemove.length} list${toRemove.length === 1 ? '' : 's'}.`;
+    showToast(message);
+  }
+}
+
+function uncheckStatusListsExcept(...keepNameFragments) {
+  const container = document.getElementById('detail-lists-checkboxes');
+  if (!container) return;
+
+  const keepIds = new Set(
+    keepNameFragments
+      .map(fragment => getListByNameFragment(fragment)?.id)
+      .filter(Boolean)
+  );
+
+  ['Currently Reading', 'Want to Read', 'Completed', 'Abandoned'].forEach(fragment => {
+    const list = getListByNameFragment(fragment);
+    if (!list || keepIds.has(list.id)) return;
+    const input = container.querySelector(`input[value="${list.id}"]`);
+    if (input) input.checked = false;
   });
 }
 
 function updateBookListAssociationsFromChecks() {
-  const checkboxes = document.querySelectorAll('.detail-list-opt:checked');
-  selectedBookForDetail.lists = Array.from(checkboxes).map(box => box.value);
-  
-  if (selectedBookForDetail.lists.length === 0) {
-    const wantToReadOpt = document.querySelector('.detail-list-opt[value="want-to-read"]');
-    if (wantToReadOpt) {
-      wantToReadOpt.checked = true;
-      selectedBookForDetail.lists.push('want-to-read');
-    }
-  }
-  
-  saveBookDetailChanges();
+  saveDetailBookListChanges();
 }
 
 function saveBookDetailChanges() {
   if (!selectedBookForDetail) return;
-  
-  // Save modifications (if it isn't an API book item without real library saving)
-  if (selectedBookForDetail.id.startsWith('discover-') || selectedBookForDetail.id.startsWith('fallback-')) {
+
+  if (selectedBookForDetail.isApiPreview) return;
+  if (selectedBookForDetail.id?.startsWith('discover-') || selectedBookForDetail.id?.startsWith('fallback-')) {
     return;
   }
+
   books = books.map(b => b.id === selectedBookForDetail.id ? selectedBookForDetail : b);
-  saveBooks(books);
-  
   renderActiveView();
 }
 
@@ -1896,7 +2636,7 @@ function showToast(msg) {
   // Apply style parameters in script to avoid stylesheet breaking
   Object.assign(toast.style, {
     position: 'fixed',
-    bottom: '100px',
+    bottom: '32px',
     left: '50%',
     transform: 'translateX(-50%) translateY(20px)',
     padding: '12px 20px',
@@ -1953,6 +2693,9 @@ function closeSheet(sheet) {
   sheet.style.opacity = '0';
   setTimeout(() => {
     sheet.classList.add('hidden');
+    if (sheet === sheetBookDetail) {
+      detailBookInitialListIds = new Set();
+    }
     selectedBookForDetail = null;
   }, 200);
 }
