@@ -500,7 +500,6 @@ body.dark-theme .logo-icon {
 .signup-form button {
   width: 100%;
   margin-top: 10px;
-  color : white;
 }
 
 /* TRANSITIONS FOR VIEW SWITCHING */
@@ -1725,6 +1724,29 @@ body.dark-theme .api-search-result-card {
   color: #9C4362;
 }
 
+.search-type-btns {
+  display: flex;
+  padding-left: 12px;
+  padding-right: 12px;
+}
+
+.search-type-btn {
+  flex: 1;
+  padding: 10px 16px;
+  border-radius: 8px;
+  border: none;
+  background: rgba(255, 255, 255, 0.08);
+  color: #d8c9b8;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: center;
+}
+
+.search-type-btn.active {
+  background: #b08d57;
+  color: #1a0f0a;
+}
+
 /* API book detail metadata */
 .detail-metadata-grid {
   display: grid;
@@ -1839,6 +1861,30 @@ body.dark-theme .profile-avatar {
   font-family: var(--font-serif);
   font-style: italic;
   color: var(--text-secondary);
+}
+
+
+.follow-tabs {
+  display: flex;
+  padding-left: 12px;
+  padding-right: 12px;
+}
+
+.follow-tab {
+  flex: 1;
+  padding: 10px 16px;
+  border-radius: 8px;
+  border: none;
+  background: rgba(255, 255, 255, 0.08);
+  color: #d8c9b8;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: center;
+}
+
+.follow-tab.active {
+  background: #b08d57;
+  color: #1a0f0a;
 }
 
 /* Reading Streak Fire badges */

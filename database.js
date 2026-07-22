@@ -65,7 +65,8 @@ export function mapListRow(row, index = 0) {
     icon,
     color,
     isSystem: row.is_default === true,
-    userId: row.user_id
+    userId: row.user_id,
+    isPublic: row.is_public === true
   };
 }
 
@@ -86,7 +87,8 @@ export function mapSavedBookRow(row) {
     genre: 'Fiction',
     readingLogs: [],
     quotes: [],
-    notes: ''
+    notes: '',
+    completedAt: row.completed_at || null
   };
 }
 
@@ -382,7 +384,7 @@ export async function getFollowCounts(userId) {
 export async function findUserByEmail(email) {
   const { data, error } = await supabase
     .from('users')
-    .select('id, email, name')
+    .select('id, email, name, bio, avatar_url')
     .eq('email', email.trim().toLowerCase())
     .maybeSingle();
 
@@ -398,8 +400,180 @@ export async function findUserByEmail(email) {
     user: {
       id: data.id,
       email: data.email,
-      name: data.name || data.email.split('@')[0]
+      name: data.name || data.email.split('@')[0],
+      bio: data.bio || '',
+      avatarUrl: data.avatar_url || ''
     },
     error: null
   };
+}
+
+export async function searchUsersByUsername(query) {
+  if (!query || query.length < 2) {
+    return { users: [], error: null };
+  }
+
+  const { data, error } = await supabase
+    .from('users')
+    .select('id, email, name, bio, avatar_url')
+    .ilike('name', `%${query}%`)
+    .limit(10);
+
+  if (error) {
+    return { users: [], error: getFriendlyDbError(error) };
+  }
+
+  return {
+    users: (data || []).map(row => ({
+      id: row.id,
+      email: row.email,
+      name: row.name || row.email.split('@')[0],
+      bio: row.bio || '',
+      avatarUrl: row.avatar_url || ''
+    })),
+    error: null
+  };
+}
+
+export async function getUserProfile(userId) {
+  const { data, error } = await supabase
+    .from('users')
+    .select('id, email, name, bio, avatar_url')
+    .eq('id', userId)
+    .maybeSingle();
+
+  if (error) {
+    return { user: null, error: getFriendlyDbError(error) };
+  }
+
+  if (!data) {
+    return { user: null, error: 'User not found.' };
+  }
+
+  return {
+    user: {
+      id: data.id,
+      email: data.email,
+      name: data.name || data.email.split('@')[0],
+      bio: data.bio || '',
+      avatarUrl: data.avatar_url || ''
+    },
+    error: null
+  };
+}
+
+export async function updateUserProfile(userId, updates) {
+  const { data, error } = await supabase
+    .from('users')
+    .update(updates)
+    .eq('id', userId)
+    .select()
+    .maybeSingle();
+
+  if (error) {
+    return { user: null, error: getFriendlyDbError(error) };
+  }
+
+  if (!data) {
+    return { user: null, error: 'User not found.' };
+  }
+
+  return {
+    user: {
+      id: data.id,
+      email: data.email,
+      name: data.name || data.email.split('@')[0],
+      bio: data.bio || '',
+      avatarUrl: data.avatar_url || ''
+    },
+    error: null
+  };
+}
+
+export async function uploadAvatar(userId, file) {
+  const fileName = `${userId}/photo.jpg`;
+  const { data, error } = await supabase
+    .storage
+    .from('avatars')
+    .upload(fileName, file, { upsert: true });
+
+  if (error) {
+    return { url: null, error: getFriendlyDbError(error) };
+  }
+
+  const { data: { publicUrl } } = supabase
+    .storage
+    .from('avatars')
+    .getPublicUrl(fileName);
+
+  return { url: publicUrl, error: null };
+}
+
+export async function fetchPublicLists(userId) {
+  const { data, error } = await supabase
+    .from('lists')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('is_public', true)
+    .order('is_default', { ascending: false })
+    .order('name', { ascending: true });
+
+  if (error) {
+    return { lists: [], error: getFriendlyDbError(error) };
+  }
+
+  return { lists: (data || []).map(mapListRow), error: null };
+}
+
+export async function updateListPublicStatus(listId, isPublic) {
+  const { data, error } = await supabase
+    .from('lists')
+    .update({ is_public: isPublic })
+    .eq('id', listId)
+    .select()
+    .maybeSingle();
+
+  if (error) {
+    return { list: null, error: getFriendlyDbError(error) };
+  }
+
+  if (!data) {
+    return { list: null, error: 'That list no longer exists.' };
+  }
+
+  return { list: mapListRow(data), error: null };
+}
+
+export async function updateBookCompletedAt(bookId, completedAt) {
+  const { data, error } = await supabase
+    .from('saved_books')
+    .update({ completed_at: completedAt })
+    .eq('id', bookId)
+    .select()
+    .maybeSingle();
+
+  if (error) {
+    return { book: null, error: getFriendlyDbError(error) };
+  }
+
+  return { book: data ? mapSavedBookRow(data) : null, error: null };
+}
+
+export async function fetchCompletedBooksByYear(userId, year) {
+  const startDate = `${year}-01-01`;
+  const endDate = `${year}-12-31`;
+
+  const { data, error } = await supabase
+    .from('saved_books')
+    .select('*')
+    .eq('user_id', userId)
+    .gte('completed_at', startDate)
+    .lte('completed_at', endDate)
+    .order('completed_at', { ascending: false });
+
+  if (error) {
+    return { books: [], error: getFriendlyDbError(error) };
+  }
+
+  return { books: (data || []).map(mapSavedBookRow), error: null };
 }

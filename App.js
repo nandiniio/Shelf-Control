@@ -31,7 +31,15 @@ import {
   getFollowers,
   getFollowing,
   getFollowCounts,
-  findUserByEmail
+  findUserByEmail,
+  searchUsersByUsername,
+  getUserProfile,
+  updateUserProfile,
+  uploadAvatar,
+  fetchPublicLists,
+  updateListPublicStatus,
+  updateBookCompletedAt,
+  fetchCompletedBooksByYear
 } from './database.js';
 
 // Application State
@@ -42,7 +50,6 @@ let listBookCounts = {};
 let profile = null;
 let currentActiveView = 'home';
 let selectedBookForDetail = null;
-let pendingSaveBook = null;
 let currentListSubview = null;
 let viewedUserProfile = null;
 let darkMode = false;
@@ -73,7 +80,6 @@ const modalCreateList = document.getElementById('modal-create-list');
 const sheetAddBook = document.getElementById('sheet-add-book');
 const sheetBookDetail = document.getElementById('sheet-book-detail');
 const modalShareShelf = document.getElementById('modal-share-shelf');
-const modalSaveToList = document.getElementById('modal-save-to-list');
 const modalRenameList = document.getElementById('modal-rename-list');
 
 // Profile Settings Elements
@@ -389,7 +395,7 @@ function createDiscoverCard(apiBook) {
     </div>
   `;
 
-  // One tap add list event
+  // One tap add list event - opens detail sheet instead of popup
   const addBtn = card.querySelector('.discover-card-add-btn');
   addBtn.addEventListener('click', (e) => {
     e.stopPropagation();
@@ -397,7 +403,25 @@ function createDiscoverCard(apiBook) {
       showToast('Book already in library!');
       return;
     }
-    promptSaveBookToList(apiBook);
+    // Open detail sheet with API preview mode
+    const mockBook = {
+      id: apiBook.id,
+      title: apiBook.title,
+      author: apiBook.author,
+      pages: apiBook.pages,
+      currentPage: 0,
+      rating: 0,
+      lists: [],
+      color: apiBook.color,
+      genre: apiBook.genre,
+      description: apiBook.description,
+      coverUrl: apiBook.coverUrl,
+      readingLogs: [],
+      quotes: [],
+      notes: '',
+      isApiPreview: true
+    };
+    openBookDetailSheet(mockBook);
   });
 
   card.addEventListener('click', () => {
@@ -531,11 +555,6 @@ function setupEventListeners() {
 
   document.getElementById('btn-close-share-shelf').addEventListener('click', () => {
     closeModal(modalShareShelf);
-  });
-
-  document.getElementById('btn-close-save-to-list').addEventListener('click', () => {
-    closeModal(modalSaveToList);
-    pendingSaveBook = null;
   });
 
   document.getElementById('btn-close-rename-list').addEventListener('click', () => {
@@ -823,13 +842,18 @@ function setupEventListeners() {
     document.querySelector('.profile-actions-grid').classList.remove('hidden');
   });
 
-  // User lookup & follow
-  document.getElementById('btn-user-lookup').addEventListener('click', () => {
-    lookupUserByEmail();
-  });
-
-  document.getElementById('user-lookup-email').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') lookupUserByEmail();
+  // Follow tabs switching
+  document.querySelectorAll('.follow-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.follow-tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      
+      const tabName = tab.dataset.tab;
+      document.getElementById('followers-grid').classList.toggle('hidden', tabName !== 'followers');
+      document.getElementById('following-grid').classList.toggle('hidden', tabName !== 'following');
+      
+      renderFollowSection(tabName);
+    });
   });
 
   // Profile - Sign Out
@@ -850,12 +874,49 @@ function setupEventListeners() {
     }
   });
 
+  // Search type toggle
+  let currentSearchType = 'books';
+  document.querySelectorAll('.search-type-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.search-type-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentSearchType = btn.dataset.type;
+      
+      const searchInput = document.getElementById('search-input');
+      const searchHint = document.getElementById('search-hint-text');
+      const searchCategories = document.getElementById('search-categories');
+      const bookResults = document.getElementById('search-results-container');
+      const userResults = document.getElementById('user-search-results-container');
+      
+      if (currentSearchType === 'books') {
+        searchInput.placeholder = 'Search Open Library by title or author...';
+        searchHint.textContent = 'Results powered by Open Library — select a book to view details and save to your shelf.';
+        searchCategories.classList.remove('hidden');
+        userResults.classList.add('hidden');
+      } else {
+        searchInput.placeholder = 'Search readers by username...';
+        searchHint.textContent = 'Find readers to follow and discover their public shelves.';
+        searchCategories.classList.add('hidden');
+        bookResults.classList.add('hidden');
+      }
+      
+      // Clear current results
+      searchInput.value = '';
+      document.getElementById('search-clear-btn').classList.add('hidden');
+      hideSearchStatusMessage();
+    });
+  });
+
   // Search input typing (Open Library, debounced)
   const searchInput = document.getElementById('search-input');
   const searchClearBtn = document.getElementById('search-clear-btn');
 
   const debouncedOpenLibrarySearch = debounce((query) => {
-    performSearch(query);
+    if (currentSearchType === 'books') {
+      performSearch(query);
+    } else {
+      performUserSearch(query);
+    }
   }, SEARCH_DEBOUNCE_MS);
 
   searchInput.addEventListener('input', () => {
@@ -865,8 +926,12 @@ function setupEventListeners() {
       debouncedOpenLibrarySearch(val);
     } else {
       searchClearBtn.classList.add('hidden');
-      document.getElementById('search-results-container').classList.add('hidden');
-      document.getElementById('search-categories').classList.remove('hidden');
+      if (currentSearchType === 'books') {
+        document.getElementById('search-results-container').classList.add('hidden');
+        document.getElementById('search-categories').classList.remove('hidden');
+      } else {
+        document.getElementById('user-search-results-container').classList.add('hidden');
+      }
       hideSearchStatusMessage();
     }
   });
@@ -874,8 +939,12 @@ function setupEventListeners() {
   searchClearBtn.addEventListener('click', () => {
     searchInput.value = '';
     searchClearBtn.classList.add('hidden');
-    document.getElementById('search-results-container').classList.add('hidden');
-    document.getElementById('search-categories').classList.remove('hidden');
+    if (currentSearchType === 'books') {
+      document.getElementById('search-results-container').classList.add('hidden');
+      document.getElementById('search-categories').classList.remove('hidden');
+    } else {
+      document.getElementById('user-search-results-container').classList.add('hidden');
+    }
     hideSearchStatusMessage();
   });
 
@@ -1011,20 +1080,64 @@ function setupEventListeners() {
   });
 
   // Open Library API preview actions
-  document.getElementById('btn-add-api-to-library').addEventListener('click', () => {
-    if (selectedBookForDetail) {
-      promptSaveBookToList(selectedBookForDetail);
+  document.getElementById('btn-add-api-to-library').addEventListener('click', async () => {
+    if (!selectedBookForDetail || !selectedBookForDetail.isApiPreview) return;
+    if (!requireAuth('add books')) return;
+
+    // Add to "Want to Read" list by default
+    const wantList = lists.find(l => l.title === 'Want to Read' || l.title.includes('Want to Read'));
+    if (!wantList) {
+      showToast('Please create a "Want to Read" list first.');
+      return;
     }
+
+    const { book, error } = await saveBookToList(currentUser.id, wantList.id, selectedBookForDetail);
+    if (error) {
+      showToast(error);
+      return;
+    }
+
+    books.push(book);
+    listBookCounts[wantList.id] = (listBookCounts[wantList.id] || 0) + 1;
+
+    // Convert from API preview to actual saved book
+    selectedBookForDetail = { ...book, isApiPreview: false };
+    
+    // Re-open detail sheet to show Shelves & Lists section
+    openBookDetailSheet(selectedBookForDetail);
+    
+    renderActiveView();
+    showToast(`Added "${book.title}" to Want to Read!`);
   });
 
-  document.getElementById('btn-add-api-to-favorites').addEventListener('click', () => {
-    if (!selectedBookForDetail) return;
+  document.getElementById('btn-add-api-to-favorites').addEventListener('click', async () => {
+    if (!selectedBookForDetail || !selectedBookForDetail.isApiPreview) return;
+    if (!requireAuth('add books')) return;
+
+    // Add to "Favorites" list by default
     const favoritesList = lists.find(l => l.title === 'Favorites' || l.title.includes('Favorites'));
-    if (favoritesList) {
-      saveApiBookToList(selectedBookForDetail, favoritesList.id);
-    } else {
-      promptSaveBookToList(selectedBookForDetail);
+    if (!favoritesList) {
+      showToast('Please create a "Favorites" list first.');
+      return;
     }
+
+    const { book, error } = await saveBookToList(currentUser.id, favoritesList.id, selectedBookForDetail);
+    if (error) {
+      showToast(error);
+      return;
+    }
+
+    books.push(book);
+    listBookCounts[favoritesList.id] = (listBookCounts[favoritesList.id] || 0) + 1;
+
+    // Convert from API preview to actual saved book
+    selectedBookForDetail = { ...book, isApiPreview: false };
+    
+    // Re-open detail sheet to show Shelves & Lists section
+    openBookDetailSheet(selectedBookForDetail);
+    
+    renderActiveView();
+    showToast(`Added "${book.title}" to Favorites!`);
   });
 
   // Delete Book
@@ -1150,66 +1263,6 @@ function bookIsInLibrary(apiBook) {
   );
 }
 
-function promptSaveBookToList(apiBook) {
-  if (!requireAuth('save books')) return;
-
-  if (bookIsInLibrary(apiBook)) {
-    showToast('This book is already in your library!');
-    return;
-  }
-
-  pendingSaveBook = apiBook;
-  document.getElementById('save-to-list-book-title').textContent = apiBook.title;
-  const optionsEl = document.getElementById('save-to-list-options');
-  const errorEl = document.getElementById('save-to-list-error');
-  errorEl.classList.add('hidden');
-  optionsEl.innerHTML = '';
-
-  if (lists.length === 0) {
-    errorEl.textContent = 'No lists found yet. Try refreshing in a moment.';
-    errorEl.classList.remove('hidden');
-  } else {
-    lists.forEach(list => {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = `save-to-list-option pastel-${list.color} animate-btn`;
-      btn.innerHTML = `
-        <i data-lucide="${list.icon || 'folder'}"></i>
-        <span>${list.title}</span>
-      `;
-      btn.addEventListener('click', () => saveApiBookToList(apiBook, list.id));
-      optionsEl.appendChild(btn);
-    });
-  }
-
-  openModal(modalSaveToList);
-  lucide.createIcons();
-}
-
-async function saveApiBookToList(apiBook, listId) {
-  if (!requireAuth('save books')) return;
-
-  const { book, error } = await saveBookToList(currentUser.id, listId, apiBook);
-
-  if (error) {
-    document.getElementById('save-to-list-error').textContent = error;
-    document.getElementById('save-to-list-error').classList.remove('hidden');
-    return;
-  }
-
-  books.push(book);
-  listBookCounts[listId] = (listBookCounts[listId] || 0) + 1;
-
-  const listName = lists.find(l => l.id === listId)?.title || 'your list';
-  closeModal(modalSaveToList);
-  pendingSaveBook = null;
-
-  showToast(`Added "${book.title}" to ${listName}!`);
-
-  selectedBookForDetail = { ...book, isApiPreview: false };
-  openBookDetailSheet(selectedBookForDetail);
-  renderActiveView();
-}
 
 async function lookupUserByEmail() {
   if (!requireAuth('find readers')) return;
@@ -1295,44 +1348,251 @@ async function renderUserLookupResult(user, container) {
 }
 
 async function renderProfileFollowStats() {
+  // This function is now handled by renderFollowSection
+  renderFollowSection('followers');
+}
+
+async function renderFollowSection(tabName) {
   if (!currentUser) return;
 
-  const followersEl = document.getElementById('stat-followers-count');
-  const followingEl = document.getElementById('stat-following-count');
-  const followersListEl = document.getElementById('followers-list');
-  const followingListEl = document.getElementById('following-list');
+  const gridId = tabName === 'followers' ? 'followers-grid' : 'following-grid';
+  const grid = document.getElementById(gridId);
+  
+  if (!grid) return;
 
-  const { followers, following, error } = await getFollowCounts(currentUser.id);
+  grid.innerHTML = '<div class="empty-state"><i data-lucide="loader-2"></i><p>Loading...</p></div>';
+  lucide.createIcons();
+
+  const userIdsResult = tabName === 'followers' 
+    ? await getFollowers(currentUser.id)
+    : await getFollowing(currentUser.id);
+
+  if (userIdsResult.error) {
+    grid.innerHTML = `<div class="empty-state"><i data-lucide="alert-circle"></i><p>${userIdsResult.error}</p></div>`;
+    lucide.createIcons();
+    return;
+  }
+
+  if (userIdsResult.userIds.length === 0) {
+    const message = tabName === 'followers' 
+      ? "No followers yet. Share your profile to get discovered!"
+      : "Not following anyone yet. Search for readers to follow!";
+    grid.innerHTML = `<div class="empty-state"><i data-lucide="users"></i><p>${message}</p></div>`;
+    lucide.createIcons();
+    return;
+  }
+
+  // Fetch user profiles for all user IDs
+  const userPromises = userIdsResult.userIds.map(userId => getUserProfile(userId));
+  const userResults = await Promise.all(userPromises);
+
+  const validUsers = userResults.filter(result => !result.error && result.user).map(result => result.user);
+
+  if (validUsers.length === 0) {
+    grid.innerHTML = `<div class="empty-state"><i data-lucide="users"></i><p>No users found.</p></div>`;
+    lucide.createIcons();
+    return;
+  }
+
+  grid.innerHTML = '';
+  
+  for (const user of validUsers) {
+    const { following: isFollowing } = await isFollowing(currentUser.id, user.id);
+    const card = createUserCard(user, isFollowing);
+    grid.appendChild(card);
+  }
+
+  lucide.createIcons();
+}
+
+function createUserCard(user, isFollowing) {
+  const card = document.createElement('div');
+  card.className = 'user-card';
+  
+  const initials = user.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+  const avatarHtml = user.avatarUrl 
+    ? `<img src="${user.avatarUrl}" alt="${user.name}" onerror="this.style.display='none'; this.parentElement.textContent='${initials}'">`
+    : initials;
+
+  card.innerHTML = `
+    <div class="user-card-avatar">${avatarHtml}</div>
+    <div class="user-card-info">
+      <h4 class="user-card-name">${user.name}</h4>
+      <p class="user-card-bio">${user.bio || 'No bio yet'}</p>
+    </div>
+    <div class="user-card-action">
+      <button class="btn-follow ${isFollowing ? 'following' : ''}" data-user-id="${user.id}">
+        ${isFollowing ? 'Following' : 'Follow'}
+      </button>
+    </div>
+  `;
+
+  // Follow/unfollow button
+  const followBtn = card.querySelector('.btn-follow');
+  followBtn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    
+    if (!requireAuth('follow users')) return;
+
+    if (isFollowing) {
+      const { error } = await unfollowUser(currentUser.id, user.id);
+      if (error) {
+        showToast(error);
+        return;
+      }
+      followBtn.classList.remove('following');
+      followBtn.textContent = 'Follow';
+      isFollowing = false;
+      showToast(`Unfollowed ${user.name}`);
+    } else {
+      const { error } = await followUser(currentUser.id, user.id);
+      if (error) {
+        showToast(error);
+        return;
+      }
+      followBtn.classList.add('following');
+      followBtn.textContent = 'Following';
+      isFollowing = true;
+      showToast(`Following ${user.name}`);
+    }
+  });
+
+  // Click card to view profile
+  card.addEventListener('click', () => {
+    viewUserProfile(user.id);
+  });
+
+  return card;
+}
+
+async function viewUserProfile(userId) {
+  if (!requireAuth('view profiles')) return;
+  
+  const { user, error } = await getUserProfile(userId);
   if (error) {
     showToast(error);
     return;
   }
 
-  followersEl.textContent = followers;
-  followingEl.textContent = following;
+  // Store viewed user profile
+  viewedUserProfile = user;
+  
+  // Switch to a new view or show a modal for viewing other user's profile
+  // For now, let's create a simple modal-based view
+  showUserProfileModal(user);
+}
 
-  const [followersResult, followingResult] = await Promise.all([
-    getFollowers(currentUser.id),
-    getFollowing(currentUser.id)
-  ]);
-
-  if (followersResult.userIds.length > 0) {
-    document.getElementById('followers-list-section').classList.remove('hidden');
-    followersListEl.innerHTML = followersResult.userIds
-      .map(id => `<li>Reader ${id.slice(0, 8)}…</li>`)
-      .join('');
-  } else {
-    document.getElementById('followers-list-section').classList.add('hidden');
+function showUserProfileModal(user) {
+  // Create a modal for viewing user profile
+  const existingModal = document.getElementById('modal-user-profile');
+  if (existingModal) {
+    existingModal.remove();
   }
 
-  if (followingResult.userIds.length > 0) {
-    document.getElementById('following-list-section').classList.remove('hidden');
-    followingListEl.innerHTML = followingResult.userIds
-      .map(id => `<li>Reader ${id.slice(0, 8)}…</li>`)
-      .join('');
-  } else {
-    document.getElementById('following-list-section').classList.add('hidden');
+  const modal = document.createElement('div');
+  modal.id = 'modal-user-profile';
+  modal.className = 'modal-overlay';
+  modal.innerHTML = `
+    <div class="modal-box glass animate-slide-up user-profile-modal">
+      <div class="modal-header">
+        <h2>${user.name}'s Profile</h2>
+        <button class="btn-close-modal" id="btn-close-user-profile">
+          <i data-lucide="x"></i>
+        </button>
+      </div>
+      
+      <div class="user-profile-content">
+        <div class="user-profile-header">
+          <div class="user-profile-avatar glass">
+            ${user.avatarUrl 
+              ? `<img src="${user.avatarUrl}" alt="${user.name}" onerror="this.style.display='none'; this.parentElement.textContent='${user.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()}'">`
+              : user.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()
+            }
+          </div>
+          <div class="user-profile-meta">
+            <h3>${user.name}</h3>
+            <p class="user-profile-bio">${user.bio || 'No bio yet'}</p>
+          </div>
+        </div>
+        
+        <div class="user-profile-section">
+          <h4>Public Shelves</h4>
+          <div id="user-public-lists-grid" class="lists-grid">
+            <div class="empty-state"><i data-lucide="loader-2"></i><p>Loading...</p></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(modal);
+  lucide.createIcons();
+
+  // Close button
+  document.getElementById('btn-close-user-profile').addEventListener('click', () => {
+    modal.remove();
+  });
+
+  // Close on backdrop click
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) {
+      modal.remove();
+    }
+  });
+
+  // Load public lists
+  loadUserPublicLists(user.id);
+}
+
+async function loadUserPublicLists(userId) {
+  const grid = document.getElementById('user-public-lists-grid');
+  if (!grid) return;
+
+  const { lists, error } = await fetchPublicLists(userId);
+  
+  if (error) {
+    grid.innerHTML = `<div class="empty-state"><i data-lucide="alert-circle"></i><p>${error}</p></div>`;
+    lucide.createIcons();
+    return;
   }
+
+  if (lists.length === 0) {
+    grid.innerHTML = `<div class="empty-state"><i data-lucide="book-open"></i><p>This reader hasn't shared any lists yet.</p></div>`;
+    lucide.createIcons();
+    return;
+  }
+
+  grid.innerHTML = '';
+  
+  for (const list of lists) {
+    const listCard = document.createElement('div');
+    listCard.className = 'list-card glass animate-btn';
+    listCard.innerHTML = `
+      <div class="list-card-header">
+        <div class="list-icon-wrapper pastel-${list.color}">
+          <i data-lucide="${list.icon || 'folder'}"></i>
+        </div>
+        <div class="list-card-title-group">
+          <h4 class="list-card-title">${list.title}</h4>
+          <span class="list-card-count">${getListBookCount(list.id)} books</span>
+        </div>
+      </div>
+    `;
+    
+    // Make it clickable to view the list (read-only)
+    listCard.addEventListener('click', () => {
+      viewPublicList(list);
+    });
+    
+    grid.appendChild(listCard);
+  }
+
+  lucide.createIcons();
+}
+
+function viewPublicList(list) {
+  // For now, just show a toast - we could expand this to show the actual books
+  showToast(`Viewing "${list.title}" - coming soon!`);
 }
 
 // 1. RENDER HOME
@@ -1484,8 +1744,8 @@ function createBookCard(book) {
 }
 
 // 2. RENDER SEARCH (Open Library)
-function showSearchStatusMessage(message, isError = false) {
-  const statusEl = document.getElementById('search-status-message');
+function showSearchStatusMessage(message, isError = false, isUserSearch = false) {
+  const statusEl = isUserSearch ? document.getElementById('user-search-status-message') : document.getElementById('search-status-message');
   statusEl.textContent = message;
   statusEl.classList.remove('hidden', 'search-status-error', 'search-status-loading');
   statusEl.classList.add(isError ? 'search-status-error' : 'search-status-loading');
@@ -1493,8 +1753,52 @@ function showSearchStatusMessage(message, isError = false) {
 
 function hideSearchStatusMessage() {
   const statusEl = document.getElementById('search-status-message');
+  const userStatusEl = document.getElementById('user-search-status-message');
   statusEl.classList.add('hidden');
   statusEl.textContent = '';
+  userStatusEl.classList.add('hidden');
+  userStatusEl.textContent = '';
+}
+
+async function performUserSearch(query) {
+  const categoriesGrid = document.getElementById('search-categories');
+  const resultsContainer = document.getElementById('user-search-results-container');
+  const resultsGrid = document.getElementById('user-search-results-grid');
+  const resultsHeader = document.getElementById('user-search-results-header');
+
+  categoriesGrid.classList.add('hidden');
+  resultsContainer.classList.remove('hidden');
+  resultsGrid.innerHTML = '';
+  resultsHeader.textContent = 'Search Results';
+  showSearchStatusMessage('Searching readers...', false, true);
+
+  try {
+    const { users, error } = await searchUsersByUsername(query);
+    
+    if (error) {
+      showSearchStatusMessage(error, true, true);
+      return;
+    }
+
+    if (users.length === 0) {
+      showSearchStatusMessage('No readers found. Try a different username.', false, true);
+      return;
+    }
+
+    hideSearchStatusMessage();
+    resultsHeader.textContent = `Found ${users.length} reader${users.length !== 1 ? 's' : ''}`;
+
+    for (const user of users) {
+      const { following: isFollowing } = currentUser ? await isFollowing(currentUser.id, user.id) : { following: false };
+      const card = createUserCard(user, isFollowing);
+      resultsGrid.appendChild(card);
+    }
+
+    lucide.createIcons();
+  } catch (err) {
+    console.error('User search failed:', err);
+    showSearchStatusMessage('Search failed. Please try again.', true, true);
+  }
 }
 
 function truncateText(text, maxLen = 140) {
@@ -1566,7 +1870,25 @@ function getBooksInListName(fragment) {
 }
 
 function addBookFromApi(apiBook, targetLists) {
-  promptSaveBookToList(apiBook);
+  // Open detail sheet with API preview mode
+  const mockBook = {
+    id: apiBook.id,
+    title: apiBook.title,
+    author: apiBook.author,
+    pages: apiBook.pages,
+    currentPage: 0,
+    rating: 0,
+    lists: [],
+    color: apiBook.color,
+    genre: apiBook.genre,
+    description: apiBook.description,
+    coverUrl: apiBook.coverUrl,
+    readingLogs: [],
+    quotes: [],
+    notes: '',
+    isApiPreview: true
+  };
+  openBookDetailSheet(mockBook);
 }
 
 async function performSearch(query) {
