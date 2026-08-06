@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Shelf Control — because your books won't control themselves</title>
+  <link rel="icon" href="data:,">
   <!-- Google Fonts for Editorial and Modern Sans Look -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -99,6 +100,10 @@
           <i data-lucide="search"></i>
           <span>Search</span>
         </button>
+        <button class="nav-item" data-view="notifications">
+          <i data-lucide="bell"></i>
+          <span>Notifications</span>
+        </button>
         <button class="nav-item" data-view="profile">
           <i data-lucide="user"></i>
           <span>Profile</span>
@@ -141,12 +146,12 @@
 
         <!-- Quote of the Day container -->
         <div id="quote-of-the-day-container" class="quote-of-the-day-card glass">
-          <div class="quote-mark-top">“</div>
+          <div class="quote-mark-top">"</div>
           <p id="quote-text" class="quote-text">A room without books is like a body without a soul.</p>
           <span id="quote-author" class="quote-author">— Cicero</span>
         </div>
 
-        <!-- Default List-of-Lists Grid View (Allows drag and drop reordering) -->
+        <!-- Default List-of-Lists Grid View -->
         <div id="lists-container" class="lists-grid">
           <!-- Dynamic List Cards Rendered Here -->
         </div>
@@ -164,13 +169,23 @@
                   <i data-lucide="pencil"></i>
                   <span>Rename</span>
                 </button>
-                <!-- Delete List Button (Hidden for default lists) -->
                 <button id="btn-delete-list" class="btn-delete-list btn-danger-outline flex-btn animate-btn hidden">
                   <i data-lucide="trash-2"></i>
                   <span>Delete List</span>
                 </button>
               </div>
             </div>
+
+            <div id="privacy-toggle-container" class="privacy-toggle-container hidden">
+              <div class="privacy-toggle-label">
+                <span>Make this list public</span>
+                <label class="switch-container">
+                  <input type="checkbox" id="list-privacy-toggle">
+                  <span class="switch-slider"></span>
+                </label>
+              </div>
+            </div>
+
             <div class="subview-header-title">
               <h2 id="subview-list-title" class="list-title-header">List Name</h2>
               <span id="subview-list-count" class="list-count-badge">0 books</span>
@@ -182,14 +197,13 @@
         </div>
       </section>
 
-      <!-- DISCOVER VIEW (API recommendations) -->
+      <!-- DISCOVER VIEW -->
       <section id="view-discover" class="app-view">
         <div class="discover-top-bar">
           <h1 class="view-title">Discover</h1>
           <span class="discover-subtitle">Curated recommendations based on your tastes</span>
         </div>
         
-        <!-- Genre recommendation selectors -->
         <div class="genre-chips-container" id="discover-genre-chips">
           <button class="genre-chip active" data-genre="Fiction">Fiction</button>
           <button class="genre-chip" data-genre="Sci-Fi">Sci-Fi</button>
@@ -198,7 +212,6 @@
           <button class="genre-chip" data-genre="Mystery">Mystery & Thrillers</button>
         </div>
 
-        <!-- Skeletons for API Loading state -->
         <div id="discover-skeletons" class="discover-skeletons-grid hidden">
           <div class="skeleton-card animate-pulse"></div>
           <div class="skeleton-card animate-pulse"></div>
@@ -206,7 +219,6 @@
           <div class="skeleton-card animate-pulse"></div>
         </div>
 
-        <!-- API Discover Recommendations Grid -->
         <div id="discover-results-grid" class="books-grid discover-results-grid">
           <!-- Dynamically populated from API -->
         </div>
@@ -215,24 +227,21 @@
       <!-- SEARCH VIEW -->
       <section id="view-search" class="app-view">
         <h1 class="view-title">Search</h1>
-        
-        <!-- Search Type Toggle -->
+
         <div class="search-type-toggle">
           <button class="search-type-btn active" data-type="books">Books</button>
           <button class="search-type-btn" data-type="users">Users</button>
         </div>
-        
-        <!-- Search Bar input -->
+
         <div class="search-input-wrapper glass">
           <i data-lucide="search" class="search-icon"></i>
-          <input type="text" id="search-input" placeholder="Search by title or author..." autocomplete="off">
+          <input type="text" id="search-input" placeholder="Search Open Library by title or author..." autocomplete="off">
           <button id="search-clear-btn" class="search-clear-btn hidden">
             <i data-lucide="x"></i>
           </button>
         </div>
         <p class="search-hint" id="search-hint-text">Select a book to view details and save to your shelf.</p>
 
-        <!-- Initial Grid of Genres (Spotify Style) - Books Only -->
         <div id="search-categories" class="search-categories-grid">
           <div class="search-cat-card pastel-pink" data-search-genre="Fiction">
             <h3>Fiction</h3>
@@ -260,7 +269,6 @@
           </div>
         </div>
 
-        <!-- Dynamic Search Results (Open Library Books) -->
         <div id="search-results-container" class="search-results-section hidden">
           <h3 id="search-results-header">Search Results</h3>
           <div id="search-status-message" class="search-status-message hidden"></div>
@@ -269,7 +277,6 @@
           </div>
         </div>
 
-        <!-- User Search Results -->
         <div id="user-search-results-container" class="search-results-section hidden">
           <h3 id="user-search-results-header">Readers</h3>
           <div id="user-search-status-message" class="search-status-message hidden"></div>
@@ -279,30 +286,59 @@
         </div>
       </section>
 
+      <!-- NOTIFICATIONS VIEW -->
+      <section id="view-notifications" class="app-view">
+        <h1 class="view-title">Notifications</h1>
+        <div id="notifications-grid" class="notifications-list-grid">
+          <!-- Notification cards populated dynamically -->
+        </div>
+      </section>
+
       <!-- PROFILE VIEW -->
       <section id="view-profile" class="app-view">
         <h1 class="view-title">My Profile</h1>
 
         <div class="profile-card glass">
           <div class="profile-header-main">
-            <div class="profile-avatar glass">
-              <span id="profile-initials">R</span>
+            <!-- Main Profile Avatar Display & Upload Input -->
+            <div class="profile-avatar-wrapper" style="display: flex; flex-direction: column; align-items: center; gap: 8px;">
+              <div class="profile-avatar glass" id="profile-avatar-box" style="overflow: hidden; width: 80px; height: 80px; border-radius: 50%;">
+                <span id="profile-initials">R</span>
+              </div>
+              
+              <!-- Hidden File Input for Avatar Upload -->
+              <input type="file" id="avatar-file-input" accept="image/*" style="display: none;" />
+
+              <!-- Add/Change Photo Button -->
+              <button type="button" id="btn-upload-avatar" class="btn-secondary animate-btn" style="padding: 4px 10px; font-size: 11px;">
+                <i data-lucide="camera" style="width: 12px; height: 12px;"></i>
+                <span>Add Photo</span>
+              </button>
             </div>
+
             <div class="profile-meta">
-              <h2 id="profile-name">Reader Name</h2>
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <h2 id="profile-name">Reader Name</h2>
+                <button type="button" id="btn-edit-profile" class="btn-icon" title="Edit Profile" style="color: var(--text-light);">
+                  <i data-lucide="edit-3" style="width: 16px; height: 16px;"></i>
+                </button>
+              </div>
               <p id="profile-email" class="profile-email">reader@example.com</p>
-              <div class="streak-badge-container">
+              <p id="profile-bio-display" class="profile-bio" style="font-size: 14px; margin-top: 4px; color: var(--text-light);">No bio yet</p>
+              <div class="streak-badge-container" style="margin-top: 8px;">
                 <span class="streak-badge"><i data-lucide="flame" class="streak-fire-icon"></i> <span id="profile-streak-count">1</span> Day Streak</span>
+                <span id="btn-view-followers" style="font-size: 13px; color: var(--text-light); margin-left: 12px; cursor: pointer;"><span id="profile-followers-count">0</span> Followers</span>
+                <span id="btn-view-following" style="font-size: 13px; color: var(--text-light); margin-left: 8px; cursor: pointer;"><span id="profile-following-count">0</span> Following</span>
               </div>
             </div>
           </div>
 
           <!-- Account & Follow Stats -->
-          <div class="account-follow-section glass"><br>
-            <h3 class="section-mini-title" style="padding-left: 12px">Social</h3><br>
+          <div class="account-follow-section glass">
+            <h3 class="section-mini-title">Social</h3>
             <div class="follow-tabs">
-              <button class="follow-tab active" data-tab="followers">Followers</button>
-              <button class="follow-tab" data-tab="following">Following</button>
+              <button class="follow-tab active" data-tab="followers">Followers <span id="profile-tab-followers-count" class="badge">0</span></button>
+              <button class="follow-tab" data-tab="following">Following <span id="profile-tab-following-count" class="badge">0</span></button>
             </div>
             <div id="followers-grid" class="follow-users-grid">
               <!-- Follower cards rendered dynamically -->
@@ -312,7 +348,7 @@
             </div>
           </div>
 
-          <!-- Duolingo style stats grid -->
+          <!-- Stats dashboard -->
           <div class="stats-dashboard">
             <div class="stat-card glass">
               <span class="stat-num" id="stat-books-count">0</span>
@@ -333,38 +369,38 @@
           </div>
 
           <div class="profile-content-grid">
-          <!-- Heatmap Calendar of Reading Logs -->
-          <div class="profile-section-card glass">
-            <div class="profile-section-header">
-              <h3>📅 Reading Heatmap</h3>
-              <span class="heatmap-subtitle" id="heatmap-month-name">Current Month</span>
+            <!-- Heatmap Calendar of Reading Logs -->
+            <div class="profile-section-card glass">
+              <div class="profile-section-header">
+                <h3>📅 Reading Heatmap</h3>
+                <span class="heatmap-subtitle" id="heatmap-month-name">Current Month</span>
+              </div>
+              <div id="heatmap-grid" class="heatmap-grid">
+                <!-- Grid blocks created dynamically -->
+              </div>
+              <div class="heatmap-legend">
+                <span>Less</span>
+                <div class="legend-box level-0"></div>
+                <div class="legend-box level-1"></div>
+                <div class="legend-box level-2"></div>
+                <div class="legend-box level-3"></div>
+                <span>More</span>
+              </div>
             </div>
-            <div id="heatmap-grid" class="heatmap-grid">
-              <!-- Grid blocks created dynamically -->
-            </div>
-            <div class="heatmap-legend">
-              <span>Less</span>
-              <div class="legend-box level-0"></div>
-              <div class="legend-box level-1"></div>
-              <div class="legend-box level-2"></div>
-              <div class="legend-box level-3"></div>
-              <span>More</span>
-            </div>
-          </div>
 
-          <!-- Genre Breakdown Donut Chart -->
-          <div class="profile-section-card glass">
-            <h3 class="chart-section-title">📊 Genre Breakdown</h3>
-            <div class="genre-chart-container">
-              <canvas id="genre-chart" width="160" height="160"></canvas>
-              <div id="genre-chart-legend" class="genre-chart-legend">
-                <!-- Legends built dynamically in js -->
+            <!-- Genre Breakdown Donut Chart -->
+            <div class="profile-section-card glass">
+              <h3 class="chart-section-title">📊 Genre Breakdown</h3>
+              <div class="genre-chart-container">
+                <canvas id="genre-chart" width="160" height="160"></canvas>
+                <div id="genre-chart-legend" class="genre-chart-legend">
+                  <!-- Legends built dynamically in js -->
+                </div>
               </div>
             </div>
           </div>
-          </div>
 
-          <!-- Reading Challenge widget with upgraded progress ring -->
+          <!-- Reading Challenge widget -->
           <div class="challenge-widget glass">
             <div class="challenge-left">
               <h3>Reading Challenge 2026</h3>
@@ -396,13 +432,13 @@
                 <label for="edit-profile-name">Reader Name</label>
                 <input type="text" id="edit-profile-name" required autocomplete="off">
               </div>
-              
+
               <div class="form-group">
                 <label for="edit-profile-bio">Bio (max 150 characters)</label>
                 <textarea id="edit-profile-bio" rows="3" maxlength="150" placeholder="Tell us about yourself..."></textarea>
                 <span class="char-count" id="bio-char-count">0/150</span>
               </div>
-              
+
               <div class="form-group">
                 <label for="edit-profile-avatar">Profile Photo</label>
                 <div class="avatar-upload-section">
@@ -410,17 +446,18 @@
                     <span id="avatar-preview-text">No photo</span>
                   </div>
                   <input type="file" id="edit-profile-avatar" accept="image/*" class="hidden">
-                  <button type="button" id="btn-upload-avatar" class="btn-secondary animate-btn">
+                  <!-- Label linked directly to edit-profile-avatar -->
+                  <label for="edit-profile-avatar" class="btn-secondary animate-btn" style="cursor: pointer; display: inline-flex; align-items: center; gap: 6px;">
                     <i data-lucide="upload"></i>
                     <span>Upload Photo</span>
-                  </button>
+                  </label>
                   <button type="button" id="btn-remove-avatar" class="btn-danger-outline animate-btn hidden">
                     <i data-lucide="trash-2"></i>
                     <span>Remove</span>
                   </button>
                 </div>
               </div>
-              
+
               <div class="form-group-row">
                 <div class="form-group">
                   <label for="edit-profile-goal">Annual Goal</label>
@@ -552,7 +589,7 @@
     </div>
   </div>
 
-  <!-- ADD BOOK MODAL/SHEET (Apple Style Slide up) -->
+  <!-- ADD BOOK MODAL/SHEET -->
   <div id="sheet-add-book" class="sheet-overlay hidden">
     <div class="sheet-box glass animate-slide-up">
       <div class="sheet-handle"></div>
@@ -564,9 +601,8 @@
       </div>
 
       <form id="add-book-form" class="sheet-form">
-        <!-- Open Library Search -->
         <div class="form-group" style="position:relative">
-          <label>Search</label>
+          <label>Search Open Library</label>
           <input type="text" id="book-search-online" placeholder="Search by title or author..." autocomplete="off">
           <div id="search-online-results" class="book-search-results hidden"></div>
         </div>
@@ -656,7 +692,7 @@
     </div>
   </div>
 
-  <!-- BOOK DETAIL SLIDE SHEET (Tabbed clean card layout) -->
+  <!-- BOOK DETAIL SLIDE SHEET -->
   <div id="sheet-book-detail" class="sheet-overlay hidden">
     <div class="sheet-box book-detail-sheet animate-slide-up">
       <div class="sheet-handle"></div>
@@ -667,7 +703,6 @@
         </button>
       </div>
 
-      <!-- Segmented Tab Navifiers -->
       <div class="detail-tabs-header">
         <button class="detail-tab-btn active" data-tab="info">Info</button>
         <button class="detail-tab-btn" data-tab="progress">Progress</button>
@@ -677,7 +712,6 @@
       <div class="detail-scroll-container">
         <!-- TAB 1: INFO PANEL -->
         <div id="detail-panel-info" class="detail-tab-panel active">
-          <!-- Cover Showcase -->
           <div class="detail-cover-showcase">
             <div id="detail-cover-image-container" class="cover-image-wrapper large-cover hidden">
               <img id="detail-cover-image" src="" alt="Book Cover" class="book-cover-img">
@@ -766,7 +800,6 @@
             </div>
           </div>
 
-          <!-- Reading Pace Tracker details -->
           <div class="detail-section clean-panel" id="detail-pace-tracker-card">
             <h3>⏱️ Reading Pace Estimator</h3>
             <div class="pace-stats-row">
@@ -781,7 +814,6 @@
             </div>
           </div>
 
-          <!-- History Logs List -->
           <div class="detail-section clean-panel">
             <h3>📅 Reading Progress Logs</h3>
             <div class="logs-list-wrapper">
@@ -794,13 +826,11 @@
 
         <!-- TAB 3: QUOTES & NOTES PANEL -->
         <div id="detail-panel-quotes" class="detail-tab-panel">
-          <!-- General Notes Box -->
           <div class="detail-section clean-panel">
             <h3>📝 Personal Notes</h3>
             <textarea id="detail-notes-input" class="detail-notes-textarea" rows="5" placeholder="Write down quotes, personal impressions, thoughts or reading logs..."></textarea>
           </div>
 
-          <!-- Highlights Quotes list manager -->
           <div class="detail-section clean-panel">
             <h3>💬 Highlighted Quotes</h3>
             <div class="quote-add-form-row">
@@ -813,7 +843,6 @@
           </div>
         </div>
 
-        <!-- Delete action bottom -->
         <div class="detail-danger-action">
           <button id="btn-delete-book" class="btn-danger-outline full-width animate-btn">
             <i data-lucide="trash-2"></i>
@@ -824,7 +853,7 @@
     </div>
   </div>
 
-  <!-- SHARE MY SHELF INSTAGRAM MODAL OVERLAY -->
+  <!-- SHARE MY SHELF MODAL -->
   <div id="modal-share-shelf" class="modal-overlay hidden">
     <div class="modal-box share-modal-box animate-slide-up">
       <div class="modal-header">
@@ -834,9 +863,7 @@
         </button>
       </div>
       <div class="share-preview-container">
-        <!-- High resolution render canvas (Hidden) -->
         <canvas id="share-canvas" width="1080" height="1920" class="hidden-canvas hidden"></canvas>
-        <!-- Smaller display preview canvas -->
         <canvas id="share-canvas-preview" width="270" height="480" class="share-preview-canvas"></canvas>
       </div>
       <div class="share-actions-row">
@@ -844,6 +871,105 @@
           <i data-lucide="download"></i>
           <span>Save Story Image</span>
         </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- User Profile Sheet -->
+  <div id="sheet-user-profile" class="sheet-overlay hidden">
+    <div class="sheet-box book-detail-sheet animate-slide-up">
+      <div class="sheet-handle"></div>
+      <div style="display: flex; justify-content: space-between; align-items: center; padding: 24px 28px 16px;">
+        <h2 id="sheet-profile-title" style="margin: 0; font-size: 24px; font-weight: 700; color: var(--text-primary);">Profile</h2>
+        <button class="btn-close-sheet" id="btn-close-user-profile">
+          <i data-lucide="x"></i>
+        </button>
+      </div>
+      
+      <div class="detail-scroll-container" style="padding: 0 28px 32px; flex: 1; overflow-y: auto;">
+        <div class="user-profile-header" style="margin-bottom: 32px;">
+          <div id="sheet-profile-avatar" class="user-profile-avatar glass" style="width: 100px; height: 100px; font-size: 32px;">
+            <!-- Avatar populated by JS -->
+          </div>
+          <div class="user-profile-meta" style="flex: 1;">
+            <h3 id="sheet-profile-name" style="font-size: 24px; margin-bottom: 8px;">Reader</h3>
+            <p id="sheet-profile-bio" class="user-profile-bio" style="font-size: 15px; margin-bottom: 16px;">No bio yet</p>
+            <div style="display: flex; gap: 16px; align-items: center;">
+              <span id="sheet-view-followers" style="font-size: 14px; font-weight: 600; color: var(--text-primary); cursor: pointer;"><span id="sheet-followers-count">0</span> <span style="font-weight: 400; color: var(--text-light);">Followers</span></span>
+              <span id="sheet-view-following" style="font-size: 14px; font-weight: 600; color: var(--text-primary); cursor: pointer;"><span id="sheet-following-count">0</span> <span style="font-weight: 400; color: var(--text-light);">Following</span></span>
+            </div>
+            <button type="button" id="btn-sheet-follow-toggle" class="btn-primary animate-btn" style="margin-top: 16px; width: auto; padding: 8px 24px;">Follow</button>
+          </div>
+        </div>
+
+        <div class="user-profile-section">
+          <h4 style="margin-bottom: 16px; font-size: 18px; color: var(--text-primary);">Public Shelves</h4>
+          <div id="sheet-public-lists-grid" class="lists-grid">
+            <div class="empty-state"><i data-lucide="loader-2"></i><p>Loading...</p></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Public List Viewer Sheet -->
+  <div id="sheet-public-list" class="sheet-overlay hidden">
+    <div class="sheet-box book-detail-sheet animate-slide-up">
+      <div class="sheet-handle"></div>
+      <div style="display: flex; justify-content: space-between; align-items: center; padding: 24px 28px 16px;">
+        <div>
+          <h2 id="sheet-public-list-title" style="margin: 0; font-size: 24px; font-weight: 700; color: var(--text-primary);">List Name</h2>
+          <span id="sheet-public-list-author" style="font-size: 14px; color: var(--text-light);">by Reader</span>
+        </div>
+        <button class="btn-close-sheet" id="btn-close-public-list">
+          <i data-lucide="x"></i>
+        </button>
+      </div>
+      
+      <div class="detail-scroll-container" style="padding: 0 28px 32px; flex: 1; overflow-y: auto;">
+        <div id="sheet-public-list-books-grid" class="books-grid">
+          <div class="empty-state"><i data-lucide="loader-2"></i><p>Loading books...</p></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Edit Profile Modal -->
+  <div id="modal-edit-profile" class="modal-overlay hidden">
+    <div class="modal-box glass animate-slide-up" style="max-width: 400px;">
+      <div class="modal-header">
+        <h2>Edit Profile</h2>
+        <button class="btn-close-modal" id="btn-close-edit-profile">
+          <i data-lucide="x"></i>
+        </button>
+      </div>
+      <div class="modal-body" style="display: flex; flex-direction: column; gap: 8px; margin-top: 16px;">
+        <div class="form-group">
+          <label for="edit-profile-name">Display Name</label>
+          <input type="text" id="edit-profile-name" placeholder="Your name">
+        </div>
+        <div class="form-group">
+          <label for="edit-profile-bio">Bio</label>
+          <textarea id="edit-profile-bio" placeholder="Tell us about your reading interests..." rows="4" style="resize: vertical;"></textarea>
+        </div>
+        <button id="btn-save-profile" class="btn-primary animate-btn" style="margin-top: 8px;">Save Changes</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Followers/Following List Modal -->
+  <div id="modal-follow-list" class="modal-overlay hidden">
+    <div class="modal-box glass animate-slide-up user-profile-modal">
+      <div class="modal-header">
+        <h2 id="follow-list-title">Followers</h2>
+        <button class="btn-close-modal" id="btn-close-follow-list">
+          <i data-lucide="x"></i>
+        </button>
+      </div>
+      <div class="modal-body" style="margin-top: 16px; max-height: 60vh; overflow-y: auto;">
+        <div id="follow-list-grid" class="lists-grid" style="display: flex; flex-direction: column; gap: 12px;">
+          <!-- User cards injected here -->
+        </div>
       </div>
     </div>
   </div>

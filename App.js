@@ -30,6 +30,9 @@ import {
   isFollowing,
   getFollowers,
   getFollowing,
+  getFollowerProfiles,
+  getFollowingProfiles,
+  getListBookCountForUser,
   getFollowCounts,
   findUserByEmail,
   searchUsersByUsername,
@@ -39,7 +42,11 @@ import {
   fetchPublicLists,
   updateListPublicStatus,
   updateBookCompletedAt,
-  fetchCompletedBooksByYear
+  fetchCompletedBooksByYear,
+  fetchNotifications,
+  createNotification,
+  dismissNotification,
+  notifyFollowersOfSharedBook
 } from './database.js';
 
 // Application State
@@ -48,6 +55,7 @@ let books = [];
 let lists = [];
 let listBookCounts = {};
 let profile = null;
+let notifications = [];
 let currentActiveView = 'home';
 let selectedBookForDetail = null;
 let currentListSubview = null;
@@ -81,6 +89,8 @@ const sheetAddBook = document.getElementById('sheet-add-book');
 const sheetBookDetail = document.getElementById('sheet-book-detail');
 const modalShareShelf = document.getElementById('modal-share-shelf');
 const modalRenameList = document.getElementById('modal-rename-list');
+const modalEditProfile = document.getElementById('modal-edit-profile');
+const modalFollowList = document.getElementById('modal-follow-list');
 
 // Profile Settings Elements
 const btnToggleSettings = document.getElementById('btn-toggle-settings');
@@ -154,7 +164,8 @@ function loadLocalProfile() {
     lastReadDate: '',
     reminderEnabled: false,
     reminderTime: '20:00',
-    lastReminderSentDate: ''
+    lastReminderSentDate: '',
+    avatarUrl: ''
   };
 }
 
@@ -163,16 +174,62 @@ function saveLocalProfile() {
   localStorage.setItem(getProfileStorageKey(), JSON.stringify(profile));
 }
 
+// PROFILE PICTURE UPLOAD HANDLER
+const handleImageUpload = (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.readAsDataURL(file);
+
+  reader.onloadend = async () => {
+    const base64Image = reader.result;
+
+    // Update in Supabase
+    const { profile: updatedProfile, error } = await updateUserProfile(currentUser.id, {
+      avatar_url: base64Image
+    });
+
+    if (error) {
+      console.error("Failed to update profile picture:", error);
+      showToast(error);
+      return;
+    }
+
+    // Update global and local application state
+    currentUser = { ...currentUser, ...updatedProfile, avatar_url: base64Image };
+    if (profile) {
+      profile.avatarUrl = base64Image;
+      saveLocalProfile();
+    }
+
+    renderProfile();
+    showToast("Profile picture updated!");
+  };
+};
+
 async function loadUserData() {
   if (!currentUser) return;
 
   profile = loadLocalProfile();
-  profile.name = profile.name || getDisplayName(currentUser);
 
-  const [listsResult, booksResult, countsResult] = await Promise.all([
+  // Fetch user profile to get username & avatar_url
+  const { profile: profileData, error: profileError } = await getUserProfile(currentUser.id);
+  if (!profileError && profileData) {
+    profile.username = profile.username || profileData.username || getDisplayName(currentUser);
+    if (profileData.avatar_url) {
+      profile.avatarUrl = profileData.avatar_url;
+      currentUser.avatar_url = profileData.avatar_url;
+    }
+  } else {
+    profile.username = profile.username || getDisplayName(currentUser);
+  }
+
+  const [listsResult, booksResult, countsResult, notificationsResult] = await Promise.all([
     fetchLists(currentUser.id),
     fetchSavedBooks(currentUser.id),
-    getListBookCounts(currentUser.id)
+    getListBookCounts(currentUser.id),
+    fetchNotifications(currentUser.id)
   ]);
 
   if (listsResult.error) showToast(listsResult.error);
@@ -182,6 +239,10 @@ async function loadUserData() {
   lists = listsResult.lists;
   books = booksResult.books;
   listBookCounts = countsResult.counts;
+  if (!notificationsResult.error) {
+    notifications = notificationsResult.notifications;
+  }
+  updateNotificationBadge();
 
   if (lists.length === 0) {
     await new Promise(resolve => setTimeout(resolve, 800));
@@ -195,8 +256,21 @@ async function loadUserData() {
 }
 
 async function handleAuthenticatedUser(user) {
+  // Clear the previous user's data immediately, before rendering anything,
+  // so it can never flash on screen while the new user's data loads.
   currentUser = user;
+  books = [];
+  lists = [];
+  listBookCounts = {};
+  notifications = [];
+  profile = null;
+  viewedUserProfile = null;
+  headerUsername.textContent = 'Reader';
+
   showAppScreen();
+  updateNotificationBadge();
+  renderActiveView();
+
   await loadUserData();
 }
 
@@ -223,7 +297,9 @@ async function initApp() {
       lists = [];
       books = [];
       listBookCounts = {};
+      notifications = [];
       profile = null;
+      updateNotificationBadge();
       showLoginScreen();
     }
   });
@@ -238,9 +314,9 @@ async function initApp() {
 function setTheme(isDark) {
   darkMode = isDark;
   localStorage.setItem('shelf_control_dark_mode', darkMode);
-  
+
   const icon = btnThemeToggle.querySelector('i');
-  
+
   if (darkMode) {
     document.body.classList.add('dark-theme');
     if (icon) {
@@ -252,19 +328,19 @@ function setTheme(isDark) {
       icon.setAttribute('data-lucide', 'moon');
     }
   }
-  
+
   lucide.createIcons();
 }
 
-// DYNAMIC discover CATEGORIES RECOMMENDATIONS FETCH
+// DYNAMIC DISCOVER CATEGORIES RECOMMENDATIONS FETCH
 async function fetchDiscoverRecommendations(genre) {
   const skeletons = document.getElementById('discover-skeletons');
   const grid = document.getElementById('discover-results-grid');
-  
+
   skeletons.classList.remove('hidden');
   grid.classList.add('hidden');
   grid.innerHTML = '';
-  
+
   try {
     let subject = 'fiction';
     if (genre === 'Sci-Fi') subject = 'science_fiction';
@@ -276,7 +352,7 @@ async function fetchDiscoverRecommendations(genre) {
     const response = await fetch(`https://openlibrary.org/subjects/${subject}.json?limit=10`);
     if (!response.ok) throw new Error('API failure');
     const data = await response.json();
-    
+
     if (data.works && data.works.length > 0) {
       data.works.forEach(work => {
         const itemBook = {
@@ -362,7 +438,7 @@ function getRandomPastelColor() {
 function createDiscoverCard(apiBook) {
   const card = document.createElement('div');
   card.className = 'book-card discover-card-wrapper';
-  
+
   const hasCoverUrl = apiBook.coverUrl && apiBook.coverUrl.trim().length > 0;
   const isAlreadyAdded = books.some(b => b.title.toLowerCase() === apiBook.title.toLowerCase());
 
@@ -379,12 +455,12 @@ function createDiscoverCard(apiBook) {
         <span class="cover-author">${apiBook.author}</span>
       </div>
     </div>
-    
+
     <!-- One-Tap Add Button -->
     <button class="discover-card-add-btn animate-btn ${isAlreadyAdded ? 'added' : ''}" title="Add to Want to Read">
       <i data-lucide="${isAlreadyAdded ? 'check' : 'plus'}"></i>
     </button>
-    
+
     <div class="book-card-info">
       <h4 class="book-card-title">${apiBook.title}</h4>
       <p class="book-card-author">${apiBook.author}</p>
@@ -453,6 +529,84 @@ function setupEventListeners() {
   btnThemeToggle.addEventListener('click', () => {
     setTheme(!darkMode);
   });
+
+  // Profile Picture Upload Trigger
+  const avatarInput = document.getElementById('avatar-file-input');
+  const btnUploadAvatar = document.getElementById('btn-upload-avatar');
+
+  if (btnUploadAvatar && avatarInput) {
+    btnUploadAvatar.addEventListener('click', () => {
+      avatarInput.click();
+    });
+
+    avatarInput.addEventListener('change', handleImageUpload);
+  }
+
+  // Edit Profile Modal
+  const btnEditProfile = document.getElementById('btn-edit-profile');
+  const btnCloseEditProfile = document.getElementById('btn-close-edit-profile');
+  const btnSaveProfile = document.getElementById('btn-save-profile');
+  const editProfileBio = document.getElementById('edit-profile-bio');
+
+  if (btnEditProfile) {
+    btnEditProfile.addEventListener('click', () => {
+      if (!profile) return;
+      document.getElementById('edit-profile-name').value = profile.username || currentUser?.name || '';
+      editProfileBio.value = profile.bio || '';
+      openModal(modalEditProfile);
+    });
+  }
+
+  if (btnCloseEditProfile) {
+    btnCloseEditProfile.addEventListener('click', () => closeModal(modalEditProfile));
+  }
+
+  if (btnSaveProfile) {
+    btnSaveProfile.addEventListener('click', async () => {
+      const newName = document.getElementById('edit-profile-name').value.trim();
+      const newBio = editProfileBio.value.trim();
+
+      const { profile: updatedProfile, error } = await updateUserProfile(currentUser.id, {
+        username: newName,
+        bio: newBio
+      });
+
+      if (error) {
+        showToast(error);
+        return;
+      }
+
+      profile.username = newName;
+      profile.bio = newBio;
+      saveLocalProfile();
+      renderProfile();
+      closeModal(modalEditProfile);
+      showToast('Profile updated!');
+    });
+  }
+
+  // Follow List Modal Close
+  const btnCloseFollowList = document.getElementById('btn-close-follow-list');
+  if (btnCloseFollowList) {
+    btnCloseFollowList.addEventListener('click', () => closeModal(modalFollowList));
+  }
+
+  const btnViewFollowers = document.getElementById('btn-view-followers');
+  const btnViewFollowing = document.getElementById('btn-view-following');
+
+  if (btnViewFollowers) {
+    btnViewFollowers.addEventListener('click', () => {
+      if (!currentUser) return;
+      openFollowListModal(currentUser.id, 'followers');
+    });
+  }
+
+  if (btnViewFollowing) {
+    btnViewFollowing.addEventListener('click', () => {
+      if (!currentUser) return;
+      openFollowListModal(currentUser.id, 'following');
+    });
+  }
 
   // Auth tab switching
   authTabSignin.addEventListener('click', () => {
@@ -543,11 +697,11 @@ function setupEventListeners() {
   document.getElementById('btn-close-create-list').addEventListener('click', () => {
     closeModal(modalCreateList);
   });
-  
+
   document.getElementById('btn-close-add-book').addEventListener('click', () => {
     closeSheet(sheetAddBook);
   });
-  
+
   document.getElementById('btn-close-book-detail').addEventListener('click', async () => {
     await saveDetailBookListChanges();
     closeSheet(sheetBookDetail);
@@ -560,6 +714,20 @@ function setupEventListeners() {
   document.getElementById('btn-close-rename-list').addEventListener('click', () => {
     closeModal(modalRenameList);
   });
+
+  const btnCloseUserProfile = document.getElementById('btn-close-user-profile');
+  if (btnCloseUserProfile) {
+    btnCloseUserProfile.addEventListener('click', () => {
+      closeSheet(document.getElementById('sheet-user-profile'));
+    });
+  }
+
+  const btnClosePublicList = document.getElementById('btn-close-public-list');
+  if (btnClosePublicList) {
+    btnClosePublicList.addEventListener('click', () => {
+      closeSheet(document.getElementById('sheet-public-list'));
+    });
+  }
 
   // Create Custom List Form
   document.getElementById('create-list-form').addEventListener('submit', async (e) => {
@@ -622,6 +790,9 @@ function setupEventListeners() {
         books.push(book);
         listBookCounts[listId] = (listBookCounts[listId] || 0) + 1;
         addedCount += 1;
+
+        const listName = lists.find(l => l.id === listId)?.name || 'a';
+        notifyFollowersOfSharedBook(currentUser.id, book);
       }
     }
 
@@ -758,6 +929,32 @@ function setupEventListeners() {
     openModal(modalRenameList);
   });
 
+  // Privacy toggle for list
+  document.getElementById('list-privacy-toggle').addEventListener('change', async (e) => {
+    if (!currentListSubview || !requireAuth('update list privacy')) return;
+
+    const newIsPublic = e.target.checked;
+    const originalValue = currentListSubview.isPublic;
+
+    // Optimistically update UI
+    e.target.checked = newIsPublic;
+
+    const { list, error } = await updateListPublicStatus(currentListSubview.id, newIsPublic);
+
+    if (error) {
+      // Revert on error
+      e.target.checked = originalValue;
+      showToast(error);
+      return;
+    }
+
+    // Update local state
+    currentListSubview.isPublic = newIsPublic;
+    lists = lists.map(l => l.id === list.id ? list : l);
+
+    showToast(newIsPublic ? 'List is now public' : 'List is now private');
+  });
+
   document.getElementById('rename-list-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     if (!requireAuth('rename lists') || !currentListSubview) return;
@@ -792,14 +989,14 @@ function setupEventListeners() {
 
   // Profile - Edit settings toggle
   btnToggleSettings.addEventListener('click', () => {
-    editProfileName.value = profile.name;
+    editProfileName.value = profile.username;
     editProfileGoal.value = profile.annualGoal;
     editProfileGenre.value = profile.favoriteGenre || 'Fiction';
-    
+
     // Check reminders toggles
     reminderToggle.checked = profile.reminderEnabled || false;
     reminderTime.value = profile.reminderTime || '20:00';
-    
+
     profileSettingsSection.classList.remove('hidden');
     document.querySelector('.profile-actions-grid').classList.add('hidden');
   });
@@ -811,15 +1008,15 @@ function setupEventListeners() {
 
   profileEditForm.addEventListener('submit', (e) => {
     e.preventDefault();
-    profile.name = editProfileName.value.trim();
+    profile.username = editProfileName.value.trim();
     profile.annualGoal = parseInt(editProfileGoal.value) || 12;
     profile.favoriteGenre = editProfileGenre.value;
-    
+
     // Reminder updates
     const reminderEnabledVal = reminderToggle.checked;
     profile.reminderEnabled = reminderEnabledVal;
     profile.reminderTime = reminderTime.value;
-    
+
     if (reminderEnabledVal && Notification.permission !== 'granted') {
       Notification.requestPermission().then(permission => {
         if (permission === 'granted') {
@@ -847,11 +1044,11 @@ function setupEventListeners() {
     tab.addEventListener('click', () => {
       document.querySelectorAll('.follow-tab').forEach(t => t.classList.remove('active'));
       tab.classList.add('active');
-      
+
       const tabName = tab.dataset.tab;
       document.getElementById('followers-grid').classList.toggle('hidden', tabName !== 'followers');
       document.getElementById('following-grid').classList.toggle('hidden', tabName !== 'following');
-      
+
       renderFollowSection(tabName);
     });
   });
@@ -868,7 +1065,9 @@ function setupEventListeners() {
       lists = [];
       books = [];
       listBookCounts = {};
+      notifications = [];
       profile = null;
+      updateNotificationBadge();
       showLoginScreen();
       showToast('Signed out successfully.');
     }
@@ -881,13 +1080,13 @@ function setupEventListeners() {
       document.querySelectorAll('.search-type-btn').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       currentSearchType = btn.dataset.type;
-      
+
       const searchInput = document.getElementById('search-input');
       const searchHint = document.getElementById('search-hint-text');
       const searchCategories = document.getElementById('search-categories');
       const bookResults = document.getElementById('search-results-container');
       const userResults = document.getElementById('user-search-results-container');
-      
+
       if (currentSearchType === 'books') {
         searchInput.placeholder = 'Search Open Library by title or author...';
         searchHint.textContent = 'Results powered by Open Library — select a book to view details and save to your shelf.';
@@ -899,7 +1098,7 @@ function setupEventListeners() {
         searchCategories.classList.add('hidden');
         bookResults.classList.add('hidden');
       }
-      
+
       // Clear current results
       searchInput.value = '';
       document.getElementById('search-clear-btn').classList.add('hidden');
@@ -1014,10 +1213,10 @@ function setupEventListeners() {
   tabButtons.forEach(btn => {
     btn.addEventListener('click', () => {
       const targetTab = btn.dataset.tab;
-      
+
       tabButtons.forEach(b => b.classList.remove('active'));
       tabPanels.forEach(p => p.classList.remove('active'));
-      
+
       btn.classList.add('active');
       document.getElementById(`detail-panel-${targetTab}`).classList.add('active');
     });
@@ -1048,7 +1247,7 @@ function setupEventListeners() {
         dateAdded: new Date().toISOString()
       });
       document.getElementById('quote-input-text').value = '';
-      
+
       saveBookDetailChanges();
       renderDetailQuotes(selectedBookForDetail);
       showToast("Quote highlight added!");
@@ -1067,14 +1266,14 @@ function setupEventListeners() {
     const url = canvas.toDataURL('image/png');
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${profile.name.replace(' ', '_')}_Shelf_Control_Stats.png`;
+    a.download = `${profile.username.replace(' ', '_')}_Shelf_Control_Stats.png`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     showToast("Story card image downloaded!");
   });
 
-  // Quote card on Home page clicking (shuffles to another one!)
+  // Quote card on Home page clicking
   document.getElementById('quote-of-the-day-container').addEventListener('click', () => {
     updateQuoteOfTheDay();
   });
@@ -1099,14 +1298,15 @@ function setupEventListeners() {
 
     books.push(book);
     listBookCounts[wantList.id] = (listBookCounts[wantList.id] || 0) + 1;
+    renderActiveView();
+    notifyFollowersOfSharedBook(currentUser.id, book);
 
     // Convert from API preview to actual saved book
     selectedBookForDetail = { ...book, isApiPreview: false };
-    
+
     // Re-open detail sheet to show Shelves & Lists section
     openBookDetailSheet(selectedBookForDetail);
-    
-    renderActiveView();
+
     showToast(`Added "${book.title}" to Want to Read!`);
   });
 
@@ -1129,14 +1329,15 @@ function setupEventListeners() {
 
     books.push(book);
     listBookCounts[favoritesList.id] = (listBookCounts[favoritesList.id] || 0) + 1;
+    renderActiveView();
+    notifyFollowersOfSharedBook(currentUser.id, book);
 
     // Convert from API preview to actual saved book
     selectedBookForDetail = { ...book, isApiPreview: false };
-    
+
     // Re-open detail sheet to show Shelves & Lists section
     openBookDetailSheet(selectedBookForDetail);
-    
-    renderActiveView();
+
     showToast(`Added "${book.title}" to Favorites!`);
   });
 
@@ -1174,7 +1375,7 @@ function setupDragAndDrop() {
     e.preventDefault();
     const draggingCard = document.querySelector('.list-card.dragging');
     if (!draggingCard) return;
-    
+
     const siblings = [...container.querySelectorAll('.list-card:not(.dragging)')];
     const nextSibling = siblings.find(sibling => {
       const box = sibling.getBoundingClientRect();
@@ -1188,14 +1389,13 @@ function setupDragAndDrop() {
 
   container.addEventListener('drop', (e) => {
     e.preventDefault();
-    // Visual reorder only — list order is managed in Supabase by name/default flag
   });
 }
 
 // VIEW SWITCHER
 function switchView(viewId) {
   currentActiveView = viewId;
-  
+
   navItems.forEach(item => {
     if (item.dataset.view === viewId) {
       item.classList.add('active');
@@ -1230,7 +1430,6 @@ function renderActiveView() {
       renderHome();
       break;
     case 'discover':
-      // Initialize discovery Recommendations on load
       const activeDiscoverGenre = document.querySelector('#discover-genre-chips .genre-chip.active').dataset.genre;
       fetchDiscoverRecommendations(activeDiscoverGenre);
       break;
@@ -1240,15 +1439,153 @@ function renderActiveView() {
         performSearch(searchVal);
       }
       break;
+    case 'notifications':
+      renderNotifications();
+      break;
     case 'profile':
       renderProfile();
       break;
   }
 }
 
+function updateNotificationBadge() {
+  // Safe no-op if the Notifications nav item doesn't exist in the current HTML.
+  const navItem = document.querySelector('.nav-item[data-view="notifications"]');
+  if (!navItem) return;
+
+  const unreadCount = notifications.length;
+  let badge = navItem.querySelector('.notif-badge');
+
+  if (unreadCount > 0) {
+    if (!badge) {
+      badge = document.createElement('span');
+      badge.className = 'notif-badge';
+      navItem.appendChild(badge);
+    }
+    badge.textContent = unreadCount > 9 ? '9+' : String(unreadCount);
+  } else if (badge) {
+    badge.remove();
+  }
+}
+
+function renderNotifications() {
+  const grid = document.getElementById('notifications-grid');
+  if (!grid) return;
+
+  grid.innerHTML = '';
+
+  if (!notifications || notifications.length === 0) {
+    grid.innerHTML = `<div class="empty-state"><i data-lucide="bell"></i><p>No new notifications</p></div>`;
+    lucide.createIcons();
+    return;
+  }
+
+  notifications.forEach(notification => {
+    const card = document.createElement('div');
+    card.className = 'notification-card glass';
+
+    const actor = notification.actor;
+    const actorName = actor ? (actor.name || actor.username || 'Someone') : 'Someone';
+
+    // Fallback for avatar
+    const initials = actorName.substring(0, 2).toUpperCase();
+    const avatarUrl = actor ? actor.avatar_url : null;
+    const avatarHtml = avatarUrl
+      ? `<img src="${avatarUrl}" alt="${actorName}" style="width:40px;height:40px;border-radius:50%;object-fit:cover;">`
+      : `<div style="width:40px;height:40px;border-radius:50%;background:var(--primary-color);color:white;display:flex;align-items:center;justify-content:center;font-weight:bold;">${initials}</div>`;
+
+    let actionButtonsHtml = '';
+
+    if (notification.type === 'follow') {
+      actionButtonsHtml = `
+        <div class="notification-actions" style="margin-top: 10px; display: flex; gap: 8px;">
+          <button class="btn-primary btn-follow-back" data-actor-id="${actor?.id}" data-notif-id="${notification.id}" style="padding: 6px 12px; font-size: 13px;">Follow Back</button>
+          <button class="btn-secondary btn-dismiss" data-notif-id="${notification.id}" style="padding: 6px 12px; font-size: 13px;">Dismiss</button>
+        </div>
+      `;
+    } else {
+      // shared_book or other types just get a dismiss button
+      actionButtonsHtml = `
+        <div class="notification-actions" style="margin-top: 10px; display: flex; gap: 8px;">
+          <button class="btn-secondary btn-dismiss" data-notif-id="${notification.id}" style="padding: 6px 12px; font-size: 13px;">Dismiss</button>
+        </div>
+      `;
+    }
+
+    // Convert date
+    const dateObj = new Date(notification.created_at);
+    const timeString = dateObj.toLocaleDateString() + ' ' + dateObj.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+
+    card.innerHTML = `
+      <div style="display: flex; gap: 12px; padding: 12px;">
+        <div class="notification-avatar">${avatarHtml}</div>
+        <div class="notification-content" style="flex: 1;">
+          <p style="margin: 0; font-size: 14px;"><strong>${actorName}</strong> ${notification.message || ''}</p>
+          <span style="font-size: 12px; color: var(--text-light);">${timeString}</span>
+          ${actionButtonsHtml}
+        </div>
+      </div>
+    `;
+
+    // Bind events
+    const followBackBtn = card.querySelector('.btn-follow-back');
+    if (followBackBtn) {
+      followBackBtn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const actorId = followBackBtn.dataset.actorId;
+        const notifId = followBackBtn.dataset.notifId;
+
+        // Disable temporarily
+        followBackBtn.disabled = true;
+
+        // Mutual Follow
+        const { error } = await followUser(currentUser.id, actorId);
+        if (error) {
+          showToast(error);
+          followBackBtn.disabled = false;
+          return;
+        }
+
+        followBackBtn.textContent = 'Following';
+        followBackBtn.classList.remove('btn-primary');
+        followBackBtn.classList.add('btn-secondary');
+        showToast(`You are now following ${actorName}`);
+
+        // Also dismiss the notification visually and in DB
+        await dismissNotification(notifId);
+        notifications = notifications.filter(n => n.id !== notifId);
+        updateNotificationBadge();
+
+        // Wait briefly then remove the card from UI to give user feedback
+        setTimeout(() => {
+          renderNotifications();
+        }, 1000);
+      });
+    }
+
+    const dismissBtn = card.querySelector('.btn-dismiss');
+    if (dismissBtn) {
+      dismissBtn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const notifId = dismissBtn.dataset.notifId;
+        dismissBtn.disabled = true;
+
+        await dismissNotification(notifId);
+        notifications = notifications.filter(n => n.id !== notifId);
+        updateNotificationBadge();
+        renderNotifications();
+      });
+    }
+
+    grid.appendChild(card);
+  });
+
+  lucide.createIcons();
+}
+
 function updateHeader() {
   if (profile && currentUser) {
-    headerUsername.textContent = profile.name || getDisplayName(currentUser);
+    headerUsername.textContent = profile.username || getDisplayName(currentUser);
   }
 }
 
@@ -1262,7 +1599,6 @@ function bookIsInLibrary(apiBook) {
     b.author.toLowerCase() === apiBook.author.toLowerCase()
   );
 }
-
 
 async function lookupUserByEmail() {
   if (!requireAuth('find readers')) return;
@@ -1310,7 +1646,7 @@ async function renderUserLookupResult(user, container) {
   container.innerHTML = `
     <div class="lookup-user-card glass">
       <div class="lookup-user-info">
-        <strong>${user.name}</strong>
+        <strong>${user.username}</strong>
         <span>${user.email}</span>
         <span class="lookup-follow-counts">${followers} followers · ${followingCount} following</span>
       </div>
@@ -1331,7 +1667,7 @@ async function renderUserLookupResult(user, container) {
         btn.disabled = false;
         return;
       }
-      showToast(`Unfollowed ${user.name}.`);
+      showToast(`Unfollowed ${user.username}.`);
     } else {
       const { error } = await followUser(currentUser.id, user.id);
       if (error) {
@@ -1339,8 +1675,11 @@ async function renderUserLookupResult(user, container) {
         btn.disabled = false;
         return;
       }
-      showToast(`Now following ${user.name}!`);
+      showToast(`Now following ${user.username}!`);
+      await createNotification(user.id, currentUser.id, 'follow', 'started following you');
     }
+
+    closeModal(modalUserLookup);
 
     await renderUserLookupResult(user, container);
     renderProfileFollowStats();
@@ -1348,7 +1687,19 @@ async function renderUserLookupResult(user, container) {
 }
 
 async function renderProfileFollowStats() {
-  // This function is now handled by renderFollowSection
+  if (!currentUser) return;
+  const { followers, following, error } = await getFollowCounts(currentUser.id);
+  if (!error) {
+    const followersEl = document.getElementById('profile-followers-count');
+    const followingEl = document.getElementById('profile-following-count');
+    const tabFollowersEl = document.getElementById('profile-tab-followers-count');
+    const tabFollowingEl = document.getElementById('profile-tab-following-count');
+    if (followersEl) followersEl.textContent = followers;
+    if (followingEl) followingEl.textContent = following;
+    if (tabFollowersEl) tabFollowersEl.textContent = followers;
+    if (tabFollowingEl) tabFollowingEl.textContent = following;
+  }
+  
   renderFollowSection('followers');
 }
 
@@ -1357,13 +1708,13 @@ async function renderFollowSection(tabName) {
 
   const gridId = tabName === 'followers' ? 'followers-grid' : 'following-grid';
   const grid = document.getElementById(gridId);
-  
+
   if (!grid) return;
 
   grid.innerHTML = '<div class="empty-state"><i data-lucide="loader-2"></i><p>Loading...</p></div>';
   lucide.createIcons();
 
-  const userIdsResult = tabName === 'followers' 
+  const userIdsResult = tabName === 'followers'
     ? await getFollowers(currentUser.id)
     : await getFollowing(currentUser.id);
 
@@ -1374,7 +1725,7 @@ async function renderFollowSection(tabName) {
   }
 
   if (userIdsResult.userIds.length === 0) {
-    const message = tabName === 'followers' 
+    const message = tabName === 'followers'
       ? "No followers yet. Share your profile to get discovered!"
       : "Not following anyone yet. Search for readers to follow!";
     grid.innerHTML = `<div class="empty-state"><i data-lucide="users"></i><p>${message}</p></div>`;
@@ -1382,11 +1733,10 @@ async function renderFollowSection(tabName) {
     return;
   }
 
-  // Fetch user profiles for all user IDs
   const userPromises = userIdsResult.userIds.map(userId => getUserProfile(userId));
   const userResults = await Promise.all(userPromises);
 
-  const validUsers = userResults.filter(result => !result.error && result.user).map(result => result.user);
+  const validUsers = userResults.filter(result => !result.error && result.profile).map(result => result.profile);
 
   if (validUsers.length === 0) {
     grid.innerHTML = `<div class="empty-state"><i data-lucide="users"></i><p>No users found.</p></div>`;
@@ -1395,10 +1745,10 @@ async function renderFollowSection(tabName) {
   }
 
   grid.innerHTML = '';
-  
+
   for (const user of validUsers) {
-    const { following: isFollowing } = await isFollowing(currentUser.id, user.id);
-    const card = createUserCard(user, isFollowing);
+    const { following: userIsFollowed } = await isFollowing(currentUser.id, user.id);
+    const card = createUserCard(user, userIsFollowed);
     grid.appendChild(card);
   }
 
@@ -1408,17 +1758,20 @@ async function renderFollowSection(tabName) {
 function createUserCard(user, isFollowing) {
   const card = document.createElement('div');
   card.className = 'user-card';
-  
-  const initials = user.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
-  const avatarHtml = user.avatarUrl 
-    ? `<img src="${user.avatarUrl}" alt="${user.name}" onerror="this.style.display='none'; this.parentElement.textContent='${initials}'">`
+
+  const displayName = user.username || 'Reader';
+  const initials = displayName.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+  const avatarUrl = user.avatar_url || user.avatarUrl;
+  const avatarHtml = avatarUrl
+    ? `<img src="${avatarUrl}" alt="${displayName}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;" onerror="this.style.display='none'; this.parentElement.textContent='${initials}'">`
     : initials;
 
   card.innerHTML = `
     <div class="user-card-avatar">${avatarHtml}</div>
     <div class="user-card-info">
-      <h4 class="user-card-name">${user.name}</h4>
+      <h4 class="user-card-name">${displayName}</h4>
       <p class="user-card-bio">${user.bio || 'No bio yet'}</p>
+      <p class="user-card-stats" id="stats-${user.id}">Loading stats...</p>
     </div>
     <div class="user-card-action">
       <button class="btn-follow ${isFollowing ? 'following' : ''}" data-user-id="${user.id}">
@@ -1427,14 +1780,25 @@ function createUserCard(user, isFollowing) {
     </div>
   `;
 
-  // Follow/unfollow button
+  // Fetch public lists count async
+  fetchPublicLists(user.id).then(({ lists, error }) => {
+    const statsEl = card.querySelector(`#stats-${user.id}`);
+    if (statsEl) {
+      if (error) {
+        statsEl.textContent = 'Lists: 0';
+      } else {
+        statsEl.textContent = `Public Lists: ${lists.length}`;
+      }
+    }
+  });
+
   const followBtn = card.querySelector('.btn-follow');
   followBtn.addEventListener('click', async (e) => {
     e.stopPropagation();
-    
+
     if (!requireAuth('follow users')) return;
 
-    if (isFollowing) {
+    if (followBtn.classList.contains('following')) {
       const { error } = await unfollowUser(currentUser.id, user.id);
       if (error) {
         showToast(error);
@@ -1442,8 +1806,7 @@ function createUserCard(user, isFollowing) {
       }
       followBtn.classList.remove('following');
       followBtn.textContent = 'Follow';
-      isFollowing = false;
-      showToast(`Unfollowed ${user.name}`);
+      showToast(`Unfollowed ${displayName}`);
     } else {
       const { error } = await followUser(currentUser.id, user.id);
       if (error) {
@@ -1452,14 +1815,15 @@ function createUserCard(user, isFollowing) {
       }
       followBtn.classList.add('following');
       followBtn.textContent = 'Following';
-      isFollowing = true;
-      showToast(`Following ${user.name}`);
+      showToast(`Following ${displayName}`);
+      await createNotification(user.id, currentUser.id, 'follow', 'started following you');
     }
   });
 
-  // Click card to view profile
-  card.addEventListener('click', () => {
-    viewUserProfile(user.id);
+  card.addEventListener('click', (e) => {
+    if (!e.target.classList.contains('btn-follow')) {
+      showUserProfileModal(user);
+    }
   });
 
   return card;
@@ -1467,89 +1831,95 @@ function createUserCard(user, isFollowing) {
 
 async function viewUserProfile(userId) {
   if (!requireAuth('view profiles')) return;
-  
-  const { user, error } = await getUserProfile(userId);
+
+  const { profile, error } = await getUserProfile(userId);
+
   if (error) {
     showToast(error);
     return;
   }
 
-  // Store viewed user profile
-  viewedUserProfile = user;
-  
-  // Switch to a new view or show a modal for viewing other user's profile
-  // For now, let's create a simple modal-based view
-  showUserProfileModal(user);
+  viewedUserProfile = profile;
+  showUserProfileModal(profile);
 }
 
 function showUserProfileModal(user) {
-  // Create a modal for viewing user profile
-  const existingModal = document.getElementById('modal-user-profile');
-  if (existingModal) {
-    existingModal.remove();
+  const sheet = document.getElementById('sheet-user-profile');
+  if (!sheet) return;
+  
+  const avatarBox = document.getElementById('sheet-profile-avatar');
+  const nameEl = document.getElementById('sheet-profile-name');
+  const bioEl = document.getElementById('sheet-profile-bio');
+  const followersCountEl = document.getElementById('sheet-followers-count');
+  const followingCountEl = document.getElementById('sheet-following-count');
+  
+  const avatarUrl = user.avatarUrl || user.avatar_url;
+  if (avatarUrl) {
+    avatarBox.innerHTML = `<img src="${avatarUrl}" alt="${user.name}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;" onerror="this.style.display='none'; this.parentElement.textContent='${(user.name||'R').split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()}'">`;
+  } else {
+    avatarBox.textContent = (user.username || user.name || 'R').split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
   }
-
-  const modal = document.createElement('div');
-  modal.id = 'modal-user-profile';
-  modal.className = 'modal-overlay';
-  modal.innerHTML = `
-    <div class="modal-box glass animate-slide-up user-profile-modal">
-      <div class="modal-header">
-        <h2>${user.name}'s Profile</h2>
-        <button class="btn-close-modal" id="btn-close-user-profile">
-          <i data-lucide="x"></i>
-        </button>
-      </div>
-      
-      <div class="user-profile-content">
-        <div class="user-profile-header">
-          <div class="user-profile-avatar glass">
-            ${user.avatarUrl 
-              ? `<img src="${user.avatarUrl}" alt="${user.name}" onerror="this.style.display='none'; this.parentElement.textContent='${user.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()}'">`
-              : user.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()
-            }
-          </div>
-          <div class="user-profile-meta">
-            <h3>${user.name}</h3>
-            <p class="user-profile-bio">${user.bio || 'No bio yet'}</p>
-          </div>
-        </div>
-        
-        <div class="user-profile-section">
-          <h4>Public Shelves</h4>
-          <div id="user-public-lists-grid" class="lists-grid">
-            <div class="empty-state"><i data-lucide="loader-2"></i><p>Loading...</p></div>
-          </div>
-        </div>
-      </div>
-    </div>
-  `;
-
-  document.body.appendChild(modal);
-  lucide.createIcons();
-
-  // Close button
-  document.getElementById('btn-close-user-profile').addEventListener('click', () => {
-    modal.remove();
-  });
-
-  // Close on backdrop click
-  modal.addEventListener('click', (e) => {
-    if (e.target === modal) {
-      modal.remove();
+  
+  nameEl.textContent = user.username || user.name;
+  bioEl.textContent = user.bio || 'No bio yet';
+  followersCountEl.textContent = '0';
+  followingCountEl.textContent = '0';
+  
+  openSheet(sheet);
+  
+  loadUserPublicLists(user.id);
+  
+  getFollowCounts(user.id).then(({ followers, following, error }) => {
+    if (!error) {
+      followersCountEl.textContent = followers;
+      followingCountEl.textContent = following;
     }
   });
-
-  // Load public lists
-  loadUserPublicLists(user.id);
+  
+  const btnFollowers = document.getElementById('sheet-view-followers');
+  const btnFollowing = document.getElementById('sheet-view-following');
+  
+  const newBtnFollowers = btnFollowers.cloneNode(true);
+  btnFollowers.replaceWith(newBtnFollowers);
+  newBtnFollowers.addEventListener('click', () => openFollowListModal(user.id, 'followers'));
+  
+  const newBtnFollowing = btnFollowing.cloneNode(true);
+  btnFollowing.replaceWith(newBtnFollowing);
+  newBtnFollowing.addEventListener('click', () => openFollowListModal(user.id, 'following'));
+  
+  const btnToggle = document.getElementById('btn-sheet-follow-toggle');
+  const newBtnToggle = btnToggle.cloneNode(true);
+  btnToggle.replaceWith(newBtnToggle);
+  
+  isFollowing(currentUser.id, user.id).then(({ following }) => {
+    newBtnToggle.textContent = following ? 'Unfollow' : 'Follow';
+    newBtnToggle.onclick = async () => {
+      newBtnToggle.disabled = true;
+      if (following) {
+        await unfollowUser(currentUser.id, user.id);
+        newBtnToggle.textContent = 'Follow';
+        following = false;
+      } else {
+        await followUser(currentUser.id, user.id);
+        newBtnToggle.textContent = 'Unfollow';
+        following = true;
+      }
+      newBtnToggle.disabled = false;
+      // Refresh count
+      const updatedCounts = await getFollowCounts(user.id);
+      if (!updatedCounts.error) {
+        followersCountEl.textContent = updatedCounts.followers;
+      }
+    };
+  });
 }
 
 async function loadUserPublicLists(userId) {
-  const grid = document.getElementById('user-public-lists-grid');
+  const grid = document.getElementById('sheet-public-lists-grid');
   if (!grid) return;
 
   const { lists, error } = await fetchPublicLists(userId);
-  
+
   if (error) {
     grid.innerHTML = `<div class="empty-state"><i data-lucide="alert-circle"></i><p>${error}</p></div>`;
     lucide.createIcons();
@@ -1563,8 +1933,9 @@ async function loadUserPublicLists(userId) {
   }
 
   grid.innerHTML = '';
-  
+
   for (const list of lists) {
+    const { count } = await getListBookCountForUser(list.id);
     const listCard = document.createElement('div');
     listCard.className = 'list-card glass animate-btn';
     listCard.innerHTML = `
@@ -1574,25 +1945,132 @@ async function loadUserPublicLists(userId) {
         </div>
         <div class="list-card-title-group">
           <h4 class="list-card-title">${list.title}</h4>
-          <span class="list-card-count">${getListBookCount(list.id)} books</span>
+          <span class="list-card-count">${count} books</span>
         </div>
       </div>
     `;
-    
-    // Make it clickable to view the list (read-only)
+
     listCard.addEventListener('click', () => {
       viewPublicList(list);
     });
-    
+
     grid.appendChild(listCard);
   }
 
   lucide.createIcons();
 }
 
-function viewPublicList(list) {
-  // For now, just show a toast - we could expand this to show the actual books
-  showToast(`Viewing "${list.title}" - coming soon!`);
+
+async function openFollowListModal(userId, type) {
+  const modalFollowList = document.getElementById('modal-follow-list');
+  const title = document.getElementById('follow-list-title');
+  const grid = document.getElementById('follow-list-grid');
+
+  if (!modalFollowList || !grid) return;
+
+  title.textContent = type === 'followers' ? 'Followers' : 'Following';
+  grid.innerHTML = '<div class="empty-state"><i data-lucide="loader-2"></i><p>Loading...</p></div>';
+  lucide.createIcons();
+
+  openModal(modalFollowList);
+
+  const { profiles, error } = type === 'followers'
+    ? await getFollowerProfiles(userId)
+    : await getFollowingProfiles(userId);
+
+  if (error) {
+    grid.innerHTML = `<div class="empty-state"><i data-lucide="alert-circle"></i><p>${error}</p></div>`;
+    lucide.createIcons();
+    return;
+  }
+
+  if (profiles.length === 0) {
+    grid.innerHTML = `<div class="empty-state"><i data-lucide="users"></i><p>${type === 'followers' ? 'No followers yet.' : 'Not following anyone yet.'}</p></div>`;
+    lucide.createIcons();
+    return;
+  }
+
+  // Get current user's followings to determine "Following" state for the cards
+  let currentUserFollowingIds = [];
+  if (currentUser) {
+    const { userIds } = await getFollowing(currentUser.id);
+    if (userIds) currentUserFollowingIds = userIds;
+  }
+
+  grid.innerHTML = '';
+
+  for (const p of profiles) {
+    const isFollowedByCurrentUser = currentUserFollowingIds.includes(p.id);
+    const card = createUserCard(p, isFollowedByCurrentUser);
+
+    // Disable follow button for self
+    if (currentUser && p.id === currentUser.id) {
+      const btn = card.querySelector('.btn-follow');
+      if (btn) btn.style.display = 'none';
+    }
+
+    grid.appendChild(card);
+  }
+}
+
+async function viewPublicList(list) {
+  const sheet = document.getElementById('sheet-public-list');
+  if (!sheet) return;
+  
+  document.getElementById('sheet-public-list-title').textContent = list.title;
+  // If viewedUserProfile is populated, we can show their name
+  const authorName = viewedUserProfile ? (viewedUserProfile.username || viewedUserProfile.name) : 'Reader';
+  document.getElementById('sheet-public-list-author').textContent = `by ${authorName}`;
+  
+  const grid = document.getElementById('sheet-public-list-books-grid');
+  grid.innerHTML = '<div class="empty-state"><i data-lucide="loader-2"></i><p>Loading books...</p></div>';
+  lucide.createIcons();
+  
+  openSheet(sheet);
+  
+  const { books: publicBooks, error } = await fetchSavedBooksByList(list.id);
+  
+  if (error) {
+    grid.innerHTML = `<div class="empty-state"><i data-lucide="alert-circle"></i><p>${error}</p></div>`;
+    lucide.createIcons();
+    return;
+  }
+  
+  if (publicBooks.length === 0) {
+    grid.innerHTML = `<div class="empty-state"><i data-lucide="book-x"></i><p>No books in this list yet.</p></div>`;
+    lucide.createIcons();
+    return;
+  }
+  
+  grid.innerHTML = '';
+  
+  publicBooks.forEach(book => {
+    const card = document.createElement('div');
+    card.className = 'book-card animate-scale-in';
+    card.innerHTML = `
+      <div class="book-cover-container">
+        ${book.coverUrl 
+          ? `<img src="${book.coverUrl}" alt="${book.title}" class="book-cover" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+             <div class="book-cover-placeholder" style="display:none; background-color: var(--pastel-${book.color || 'blue'}); color: var(--text-dark);">
+               <span class="placeholder-title">${book.title}</span>
+             </div>`
+          : `<div class="book-cover-placeholder" style="background-color: var(--pastel-${book.color || 'blue'}); color: var(--text-dark);">
+               <span class="placeholder-title">${book.title}</span>
+             </div>`
+        }
+      </div>
+      <div class="book-info">
+        <h3 class="book-title">${book.title}</h3>
+        <p class="book-author">${book.author}</p>
+      </div>
+    `;
+    
+    card.addEventListener('click', () => {
+      openBookDetailSheet({ ...book, isApiPreview: true });
+    });
+    
+    grid.appendChild(card);
+  });
 }
 
 // 1. RENDER HOME
@@ -1617,7 +2095,6 @@ function renderHome() {
       </div>
     `;
 
-    // Drag events
     card.setAttribute('draggable', 'true');
     card.addEventListener('dragstart', () => {
       card.classList.add('dragging');
@@ -1632,7 +2109,7 @@ function renderHome() {
 
     container.appendChild(card);
   });
-  
+
   lucide.createIcons();
 }
 
@@ -1645,11 +2122,21 @@ function openListBooksSubview(list) {
   const subviewGrid = document.getElementById('list-books-grid');
   const deleteBtn = document.getElementById('btn-delete-list');
   const renameBtn = document.getElementById('btn-rename-list');
+  const privacyToggleContainer = document.getElementById('privacy-toggle-container');
+  const privacyToggle = document.getElementById('list-privacy-toggle');
 
   listsContainer.classList.add('hidden');
   subview.classList.remove('hidden');
 
   subviewTitle.textContent = list.title;
+
+  const isOwner = currentUser && list.userId === currentUser.id;
+  if (isOwner) {
+    privacyToggleContainer.classList.remove('hidden');
+    privacyToggle.checked = list.isPublic || false;
+  } else {
+    privacyToggleContainer.classList.add('hidden');
+  }
 
   if (list.isSystem) {
     deleteBtn.classList.add('hidden');
@@ -1663,9 +2150,9 @@ function openListBooksSubview(list) {
   const listBooks = books.filter(b => b.listId === list.id);
   subviewCount.textContent = `${listBooks.length} ${listBooks.length === 1 ? 'book' : 'books'}`;
   listBookCounts[list.id] = listBooks.length;
-  
+
   subviewGrid.innerHTML = '';
-  
+
   if (listBooks.length === 0) {
     subviewGrid.innerHTML = `
       <div class="empty-state-notice" style="grid-column: span 2; text-align: center; padding: 40px 20px; color: var(--text-secondary);">
@@ -1679,24 +2166,23 @@ function openListBooksSubview(list) {
       subviewGrid.appendChild(createBookCard(book));
     });
   }
-  
+
   lucide.createIcons();
 }
 
 function getAveragePace(book) {
   if (!book.readingLogs || book.readingLogs.length === 0) {
-    return (profile && profile.averagePace) ? profile.averagePace : 20; // default 20
+    return (profile && profile.averagePace) ? profile.averagePace : 20;
   }
   const totalRead = book.readingLogs.reduce((sum, l) => sum + l.pagesLogged, 0);
   const days = book.readingLogs.length;
   return Math.max(1, Math.round(totalRead / days));
 }
 
-// Generate Book Cards (With Visual Reading Progress bars)
 function createBookCard(book) {
   const card = document.createElement('div');
   card.className = 'book-card';
-  
+
   const hasProgress = book.currentPage > 0;
   const percent = Math.min(100, Math.round((book.currentPage / book.pages) * 100)) || 0;
 
@@ -1708,7 +2194,7 @@ function createBookCard(book) {
   const estText = (isCurrentlyReading && book.currentPage < book.pages) ? ` · Est. ${estDays}d left` : '';
 
   const hasCoverUrl = book.coverUrl && book.coverUrl.trim().length > 0;
-  
+
   card.innerHTML = `
     <div class="cover-wrapper">
       ${hasCoverUrl ? `
@@ -1735,11 +2221,11 @@ function createBookCard(book) {
       ` : ''}
     </div>
   `;
-  
+
   card.addEventListener('click', () => {
     openBookDetailSheet(book);
   });
-  
+
   return card;
 }
 
@@ -1773,9 +2259,10 @@ async function performUserSearch(query) {
   showSearchStatusMessage('Searching readers...', false, true);
 
   try {
-    const { users, error } = await searchUsersByUsername(query);
-    
+    const { users, error } = await searchUsersByUsername(query, currentUser?.id);
+
     if (error) {
+      console.error('Supabase user search error:', error);
       showSearchStatusMessage(error, true, true);
       return;
     }
@@ -1789,8 +2276,8 @@ async function performUserSearch(query) {
     resultsHeader.textContent = `Found ${users.length} reader${users.length !== 1 ? 's' : ''}`;
 
     for (const user of users) {
-      const { following: isFollowing } = currentUser ? await isFollowing(currentUser.id, user.id) : { following: false };
-      const card = createUserCard(user, isFollowing);
+      const followState = currentUser ? await isFollowing(currentUser.id, user.id) : { following: false };
+      const card = createUserCard(user, followState.following);
       resultsGrid.appendChild(card);
     }
 
@@ -1870,7 +2357,6 @@ function getBooksInListName(fragment) {
 }
 
 function addBookFromApi(apiBook, targetLists) {
-  // Open detail sheet with API preview mode
   const mockBook = {
     id: apiBook.id,
     title: apiBook.title,
@@ -1964,12 +2450,20 @@ function renderProfile() {
   const statAvg = document.getElementById('stat-avg-rating');
   const goalDisplay = document.getElementById('challenge-goal-display');
   const goalInput = document.getElementById('challenge-goal-input');
-  
-  // Streak metrics
+
   const profileStreakCount = document.getElementById('profile-streak-count');
-  
-  profileName.textContent = profile.name;
-  profileInitials.textContent = profile.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() || 'R';
+
+  profileName.textContent = profile.username;
+
+  // Render Profile Avatar Picture or Initials Fallback
+  const avatarBox = document.getElementById('profile-avatar-box') || profileInitials?.parentElement;
+  const activeAvatarUrl = currentUser?.avatar_url || profile?.avatarUrl;
+
+  if (activeAvatarUrl && avatarBox) {
+    avatarBox.innerHTML = `<img src="${activeAvatarUrl}" alt="Profile" style="width:100%; height:100%; object-fit:cover; border-radius:50%;" />`;
+  } else if (profileInitials) {
+    profileInitials.textContent = profile.username.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() || 'R';
+  }
 
   const profileEmail = document.getElementById('profile-email');
   if (profileEmail && currentUser) {
@@ -1979,30 +2473,28 @@ function renderProfile() {
   renderProfileFollowStats();
 
   const completedBooks = getBooksInListName('Completed');
-  
-  // Calculate total pages logged in history
+
   const totalPagesLogged = books.reduce((sum, b) => {
     if (b.readingLogs) {
       return sum + b.readingLogs.reduce((s, l) => s + l.pagesLogged, 0);
     }
     return sum + (b.currentPage || 0);
   }, 0);
-  
+
   const ratedBooks = books.filter(b => b.rating > 0);
   const avgRating = ratedBooks.length > 0
     ? (ratedBooks.reduce((sum, b) => sum + b.rating, 0) / ratedBooks.length).toFixed(1)
     : '0.0';
-    
-  // Check Reading Streak status
+
   let streakDays = profile.streak || 0;
   const today = new Date().toISOString().split('T')[0];
-  
+
   if (profile.lastReadDate) {
     const lastDate = new Date(profile.lastReadDate);
     const currDate = new Date(today);
     const diffTime = Math.abs(currDate - lastDate);
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    
+
     if (diffDays > 1) {
       streakDays = 0;
       profile.streak = 0;
@@ -2029,11 +2521,11 @@ function renderProfile() {
 
   profile.averagePace = avgDailyPace;
   saveLocalProfile();
-  
+
   const annualGoal = profile.annualGoal || 12;
   goalDisplay.textContent = annualGoal;
   goalInput.value = annualGoal;
-  
+
   renderProgressRing(completedBooks.length, annualGoal);
   renderHeatmapGrid();
   renderGenreDonutChart();
@@ -2043,18 +2535,18 @@ function renderProgressRing(completed, goal) {
   const ring = document.getElementById('challenge-ring-progress');
   const completedText = document.getElementById('challenge-completed-display');
   const ringDenom = document.querySelector('.ring-denom');
-  
+
   completedText.textContent = completed;
   ringDenom.textContent = `/${goal}`;
-  
+
   const radius = 38;
   const circumference = 2 * Math.PI * radius;
-  
+
   ring.style.strokeDasharray = `${circumference} ${circumference}`;
-  
+
   const progressRatio = Math.min(1, completed / goal);
   const offset = circumference - (progressRatio * circumference);
-  
+
   ring.style.strokeDashoffset = offset;
 }
 
@@ -2067,14 +2559,13 @@ function renderHeatmapGrid() {
   const now = new Date();
   const month = now.getMonth();
   const year = now.getFullYear();
-  
+
   const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const firstDayIndex = new Date(year, month, 1).getDay(); // weekday index (0-6)
+  const firstDayIndex = new Date(year, month, 1).getDay();
   const monthName = now.toLocaleString('default', { month: 'long' });
-  
+
   monthLabel.textContent = `${monthName} ${year}`;
 
-  // Process logged dates across books
   let dailyPages = {};
   books.forEach(b => {
     if (b.readingLogs) {
@@ -2084,7 +2575,6 @@ function renderHeatmapGrid() {
     }
   });
 
-  // Align weekday headings (Sun - Sat)
   const weekdays = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
   weekdays.forEach(day => {
     const box = document.createElement('div');
@@ -2097,7 +2587,6 @@ function renderHeatmapGrid() {
     grid.appendChild(box);
   });
 
-  // Pad empty starting days of weekday
   for (let i = 0; i < firstDayIndex; i++) {
     const emptyBox = document.createElement('div');
     emptyBox.className = 'heatmap-day-box empty-box';
@@ -2105,11 +2594,10 @@ function renderHeatmapGrid() {
     grid.appendChild(emptyBox);
   }
 
-  // Draw day squares
   for (let d = 1; d <= daysInMonth; d++) {
     const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
     const loggedPages = dailyPages[dateStr] || 0;
-    
+
     let level = 'level-0';
     if (loggedPages > 40) level = 'level-3';
     else if (loggedPages > 15) level = 'level-2';
@@ -2119,7 +2607,7 @@ function renderHeatmapGrid() {
     box.className = `heatmap-day-box ${level}`;
     box.textContent = d;
     box.title = `${loggedPages} pages logged on ${dateStr}`;
-    
+
     grid.appendChild(box);
   }
 }
@@ -2133,7 +2621,6 @@ function renderGenreDonutChart() {
   const ctx = canvas.getContext('2d');
   legendContainer.innerHTML = '';
 
-  // Calculate stats
   let genreCounts = {};
   books.forEach(b => {
     genreCounts[b.genre] = (genreCounts[b.genre] || 0) + 1;
@@ -2141,7 +2628,6 @@ function renderGenreDonutChart() {
 
   const total = Object.values(genreCounts).reduce((a, b) => a + b, 0);
 
-  // Clear canvas
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
   const colors = {
@@ -2156,7 +2642,6 @@ function renderGenreDonutChart() {
   const borderThemeColor = darkMode ? '#161311' : '#FAF8F5';
 
   if (total === 0) {
-    // Empty state chart
     ctx.beginPath();
     ctx.arc(80, 80, 70, 0, 2 * Math.PI);
     ctx.fillStyle = '#EBEBEB';
@@ -2177,27 +2662,24 @@ function renderGenreDonutChart() {
   }
 
   let startAngle = -Math.PI / 2;
-  
+
   Object.entries(genreCounts).forEach(([genre, count]) => {
     const share = count / total;
     const endAngle = startAngle + (share * 2 * Math.PI);
     const color = colors[genre] || '#7C7A78';
 
-    // Draw slice
     ctx.beginPath();
     ctx.moveTo(80, 80);
     ctx.arc(80, 80, 70, startAngle, endAngle);
     ctx.fillStyle = color;
     ctx.fill();
-    
-    // Draw boundary border
+
     ctx.strokeStyle = borderThemeColor;
     ctx.lineWidth = 2;
     ctx.stroke();
 
     startAngle = endAngle;
 
-    // Build Legend item
     const pct = Math.round(share * 100);
     const item = document.createElement('div');
     item.className = 'legend-item';
@@ -2209,7 +2691,6 @@ function renderGenreDonutChart() {
     legendContainer.appendChild(item);
   });
 
-  // Draw Inner circle to form Donut
   ctx.beginPath();
   ctx.arc(80, 80, 42, 0, 2 * Math.PI);
   ctx.fillStyle = borderThemeColor;
@@ -2219,8 +2700,7 @@ function renderGenreDonutChart() {
 // SLIDE-UP DETAIL SHEETS
 function openBookDetailSheet(book) {
   selectedBookForDetail = book;
-  
-  // Reset active tab to Info panel
+
   tabButtons.forEach(b => {
     if (b.dataset.tab === 'info') b.classList.add('active');
     else b.classList.remove('active');
@@ -2234,7 +2714,7 @@ function openBookDetailSheet(book) {
   const detailCoverImageContainer = document.getElementById('detail-cover-image-container');
   const detailCoverImage = document.getElementById('detail-cover-image');
   const detailCoverRendered = document.getElementById('detail-cover-rendered');
-  
+
   const detailCoverTitle = document.getElementById('detail-cover-title');
   const detailCoverAuthor = document.getElementById('detail-cover-author');
   const detailTitle = document.getElementById('detail-title');
@@ -2280,12 +2760,10 @@ function openBookDetailSheet(book) {
     }
     descInput.readOnly = false;
   }
-  
-  // Fill text description
+
   descInput.value = book.description || '';
   document.getElementById('detail-notes-input').value = book.notes || '';
-  
-  // Cover displays
+
   if (book.coverUrl && book.coverUrl.trim().length > 0) {
     detailCoverImage.src = book.coverUrl;
     detailCoverImageContainer.classList.remove('hidden');
@@ -2295,15 +2773,14 @@ function openBookDetailSheet(book) {
     detailCoverRendered.classList.remove('hidden');
     detailCoverRendered.className = `rendered-book-cover large-cover pastel-${book.color}`;
   }
-  
-  // Reading Slider Setup
+
   progressTotal.textContent = book.pages;
   progressCurrent.value = book.currentPage;
-  
+
   const percent = Math.min(100, Math.round((book.currentPage / book.pages) * 100)) || 0;
   progressPercent.textContent = `${percent}%`;
   progressSlider.value = percent;
-  
+
   populateDetailBookLists(book);
   updateStarsUI(book.rating || 0);
   updatePaceEstimatorUI(book);
@@ -2323,31 +2800,29 @@ function openBookDetailSheet(book) {
 
 function updateDetailProgressLive(currentPageVal) {
   if (!selectedBookForDetail) return;
-  
+
   const oldPage = selectedBookForDetail.currentPage;
   selectedBookForDetail.currentPage = currentPageVal;
-  
+
   const percent = Math.min(100, Math.round((currentPageVal / selectedBookForDetail.pages) * 100)) || 0;
   document.getElementById('detail-progress-percent').textContent = `${percent}%`;
-  
-  // Log daily reading entries
+
   const delta = currentPageVal - oldPage;
   if (delta > 0) {
     const todayStr = new Date().toISOString().split('T')[0];
     selectedBookForDetail.readingLogs = selectedBookForDetail.readingLogs || [];
-    
+
     const existingLog = selectedBookForDetail.readingLogs.find(l => l.date === todayStr);
     if (existingLog) {
       existingLog.pagesLogged += delta;
     } else {
       selectedBookForDetail.readingLogs.push({ date: todayStr, pagesLogged: delta });
     }
-    
+
     updateStreakOnRead();
     renderDetailLogsList(selectedBookForDetail);
   }
 
-  // Auto-assign status lists based on reading progress
   const completedList = getListByNameFragment('Completed');
   const currentlyReadingList = getListByNameFragment('Currently Reading');
   const wantToReadList = getListByNameFragment('Want to Read');
@@ -2412,34 +2887,32 @@ function updateStarsUI(ratingVal) {
 function updatePaceEstimatorUI(book) {
   const paceRate = document.getElementById('detail-pace-rate');
   const paceTime = document.getElementById('detail-pace-time');
-  
+
   if (book.currentPage >= book.pages) {
     paceRate.textContent = '-';
     paceTime.textContent = 'Completed!';
     return;
   }
-  
+
   const pace = getAveragePace(book);
   const pagesLeft = book.pages - book.currentPage;
   const estDays = Math.ceil(pagesLeft / pace);
-  
+
   paceRate.textContent = pace;
   paceTime.textContent = `Est. ${estDays}d`;
 }
 
-// Render progress reading logs in sheet
 function renderDetailLogsList(book) {
   const listEl = document.getElementById('detail-logs-list');
   listEl.innerHTML = '';
-  
+
   const logs = book.readingLogs || [];
-  
+
   if (logs.length === 0) {
     listEl.innerHTML = '<li class="empty-log-msg" style="color:var(--text-secondary);font-size:11px;">No pages logged yet. Slide progress bar above to write logs.</li>';
     return;
   }
 
-  // Reverse list order
   [...logs].reverse().forEach(log => {
     const li = document.createElement('li');
     li.innerHTML = `
@@ -2450,13 +2923,12 @@ function renderDetailLogsList(book) {
   });
 }
 
-// Render highlighted quotes in sheet
 function renderDetailQuotes(book) {
   const listEl = document.getElementById('detail-quotes-list');
   listEl.innerHTML = '';
-  
+
   const quotes = book.quotes || [];
-  
+
   if (quotes.length === 0) {
     listEl.innerHTML = '<li class="empty-log-msg" style="color:var(--text-secondary);font-size:11px;">No quotes saved. Type quote text above.</li>';
     return;
@@ -2465,12 +2937,12 @@ function renderDetailQuotes(book) {
   quotes.forEach((q, idx) => {
     const li = document.createElement('li');
     li.innerHTML = `
-      <span class="quote-text-val">“${q.text}”</span>
+      <span class="quote-text-val">"${q.text}"</span>
       <button class="btn-delete-quote" data-idx="${idx}" title="Delete Quote">
         <i data-lucide="trash-2" style="width:12px;height:12px;"></i>
       </button>
     `;
-    
+
     li.querySelector('.btn-delete-quote').addEventListener('click', (e) => {
       e.stopPropagation();
       book.quotes.splice(idx, 1);
@@ -2479,7 +2951,7 @@ function renderDetailQuotes(book) {
       updateQuoteOfTheDay();
       showToast("Quote deleted.");
     });
-    
+
     listEl.appendChild(li);
   });
   lucide.createIcons();
@@ -2597,6 +3069,9 @@ async function saveDetailBookListChanges() {
     if (book && !books.some(b => b.id === book.id)) {
       books.push({ ...selectedBookForDetail, ...book, listId: book.listId });
       listBookCounts[listId] = (listBookCounts[listId] || 0) + 1;
+      const listName = lists.find(l => l.id === listId)?.name || 'a';
+      
+      notifyFollowersOfSharedBook(currentUser.id, book);
     }
   }
 
@@ -2683,8 +3158,7 @@ function saveBookDetailChanges() {
 function updateQuoteOfTheDay() {
   const quoteText = document.getElementById('quote-text');
   const quoteAuthor = document.getElementById('quote-author');
-  
-  // Fetch quotes lists
+
   let userQuotes = [];
   books.forEach(b => {
     if (b.quotes && b.quotes.length > 0) {
@@ -2696,140 +3170,121 @@ function updateQuoteOfTheDay() {
 
   if (userQuotes.length > 0) {
     const randomQuote = userQuotes[Math.floor(Math.random() * userQuotes.length)];
-    quoteText.textContent = `“${randomQuote.text}”`;
+    quoteText.textContent = `"${randomQuote.text}"`;
     quoteAuthor.textContent = `— From: ${randomQuote.author}`;
   } else {
     const randomQuote = FAMOUS_QUOTES[Math.floor(Math.random() * FAMOUS_QUOTES.length)];
-    quoteText.textContent = `“${randomQuote.text}”`;
+    quoteText.textContent = `"${randomQuote.text}"`;
     quoteAuthor.textContent = `— ${randomQuote.author}`;
   }
 }
 
-// 7. RENDER INSTAGRAM STORY CANVAS RENDERER (Share Shelf Modal)
+// 7. RENDER INSTAGRAM STORY CANVAS RENDERER
 function renderShareCanvas() {
   const canvas = document.getElementById('share-canvas');
   const canvasPreview = document.getElementById('share-canvas-preview');
   if (!canvas || !canvasPreview) return;
 
   const ctx = canvas.getContext('2d');
-  
-  // Theme styling configurations
+
   const lightBgGrad1 = '#FAF9F6';
   const lightBgGrad2 = '#EBE7DD';
   const darkBgGrad1 = '#0F0E0C';
   const darkBgGrad2 = '#1C1915';
-  
+
   const bgGrad1 = darkMode ? darkBgGrad1 : lightBgGrad1;
   const bgGrad2 = darkMode ? darkBgGrad2 : lightBgGrad2;
-  
+
   const textMainColor = darkMode ? '#FAF7F2' : '#1A1612';
   const textSubColor = darkMode ? '#A09587' : '#6E6458';
 
-  // 1. Draw background gradient wallpaper
   const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
   gradient.addColorStop(0, bgGrad1);
   gradient.addColorStop(1, bgGrad2);
   ctx.fillStyle = gradient;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  // 2. Draw ambient blurry background color spots
   ctx.save();
   ctx.globalAlpha = darkMode ? 0.08 : 0.15;
-  ctx.fillStyle = '#93C6F7'; // blue spot
+  ctx.fillStyle = '#93C6F7';
   ctx.beginPath();
   ctx.arc(200, 400, 350, 0, 2 * Math.PI);
   ctx.fill();
-  
-  ctx.fillStyle = '#F8ADC4'; // pink spot
+
+  ctx.fillStyle = '#F8ADC4';
   ctx.beginPath();
   ctx.arc(880, 1500, 400, 0, 2 * Math.PI);
   ctx.fill();
   ctx.restore();
 
-  // 3. Draw clean border borders framing
   ctx.strokeStyle = textMainColor;
   ctx.lineWidth = 14;
   ctx.strokeRect(40, 40, canvas.width - 80, canvas.height - 80);
 
-  // 4. Draw Header Title
   ctx.textAlign = 'center';
   ctx.fillStyle = textMainColor;
-  
-  // App Title
+
   ctx.font = 'bold 72px "Playfair Display", Georgia, serif';
   ctx.fillText('Shelf Control', canvas.width / 2, 180);
-  
-  // Tagline
+
   ctx.font = 'italic 32px "Playfair Display", Georgia, serif';
   ctx.fillStyle = textSubColor;
-  ctx.fillText('“because your books won\'t control themselves”', canvas.width / 2, 235);
+  ctx.fillText('"because your books won\'t control themselves"', canvas.width / 2, 235);
 
-  // 5. Draw Profile details card
   ctx.fillStyle = darkMode ? 'rgba(22, 19, 17, 0.65)' : 'rgba(255, 255, 255, 0.45)';
   ctx.strokeStyle = darkMode ? 'rgba(255,255,255,0.06)' : 'rgba(0, 0, 0, 0.05)';
   ctx.lineWidth = 4;
-  
-  // Rounded rect
+
   roundRect(ctx, 100, 320, canvas.width - 200, 300, 32, true, true);
-  
-  // Reader Name heading
+
   ctx.fillStyle = textMainColor;
   ctx.font = '800 48px "Outfit", sans-serif';
-  ctx.fillText(profile.name, canvas.width / 2, 420);
-  
-  // Streak metrics
+  ctx.fillText(profile.username, canvas.width / 2, 420);
+
   ctx.fillStyle = '#E26E2F';
   ctx.font = 'bold 36px "Outfit", sans-serif';
   ctx.fillText(`🔥 ${profile.streak || 0} DAY STREAK`, canvas.width / 2, 480);
-  
-  // Annual Challenge sub
+
   ctx.fillStyle = textSubColor;
   ctx.font = '600 28px "Outfit", sans-serif';
   const completedBooks = books.filter(b => b.lists.includes('completed'));
   ctx.fillText(`Goal Progress: ${completedBooks.length} of ${profile.annualGoal || 12} books read`, canvas.width / 2, 540);
 
-  // 6. Draw circular motivational Ring charts
   const ratio = Math.min(1, completedBooks.length / (profile.annualGoal || 12));
   ctx.save();
   ctx.translate(canvas.width / 2, 800);
-  
-  // Circle BG track
+
   ctx.strokeStyle = darkMode ? 'rgba(255, 255, 255, 0.08)' : 'rgba(26, 22, 18, 0.08)';
   ctx.lineWidth = 20;
   ctx.beginPath();
   ctx.arc(0, 0, 100, 0, 2 * Math.PI);
   ctx.stroke();
-  
-  // Circular arc progress
+
   ctx.strokeStyle = textMainColor;
   ctx.lineCap = 'round';
   ctx.beginPath();
   ctx.arc(0, 0, 100, -Math.PI / 2, (-Math.PI / 2) + (ratio * 2 * Math.PI));
   ctx.stroke();
-  
-  // Center Text labels
+
   ctx.fillStyle = textMainColor;
   ctx.font = 'bold 54px "Playfair Display", Georgia, serif';
   ctx.fillText(`${Math.round(ratio * 100)}%`, 0, 18);
   ctx.restore();
 
-  // Draw statistics badge labels below ring
   ctx.fillStyle = textSubColor;
   ctx.font = '700 24px "Outfit", sans-serif';
   ctx.fillText('CHALLENGE COMPLETION', canvas.width / 2, 970);
 
-  // 7. Draw Books Grid showcase
   ctx.fillStyle = textMainColor;
   ctx.font = 'bold 42px "Playfair Display", Georgia, serif';
   ctx.fillText('Top Shelved Books', canvas.width / 2, 1100);
 
-  // Draw 3 top book cover representations using CSS canvas colors
   const topBooks = books.slice(0, 3);
   const startX = 150;
   const cardWidth = 220;
   const cardHeight = 330;
   const spacing = 60;
-  
+
   const colorsMap = {
     'blue': '#D6E6F5',
     'pink': '#F8DEE6',
@@ -2842,46 +3297,38 @@ function renderShareCanvas() {
   topBooks.forEach((book, idx) => {
     const x = startX + idx * (cardWidth + spacing);
     const y = 1180;
-    
-    // Draw card shadows and rect
+
     ctx.save();
     ctx.shadowColor = 'rgba(0, 0, 0, 0.15)';
     ctx.shadowBlur = 24;
     ctx.shadowOffsetY = 16;
-    
+
     ctx.fillStyle = colorsMap[book.color] || '#DCDCDC';
     roundRect(ctx, x, y, cardWidth, cardHeight, 18, true, false);
     ctx.restore();
 
-    // Draw Book spine left highlight
     ctx.fillStyle = 'rgba(0, 0, 0, 0.08)';
     ctx.fillRect(x, y, 16, cardHeight);
-    
-    // Draw Title Text inside cover card
-    ctx.fillStyle = darkMode ? '#1A1612' : '#1A1612'; // keep cover text dark for contrast
+
+    ctx.fillStyle = darkMode ? '#1A1612' : '#1A1612';
     ctx.font = 'bold 24px "Playfair Display", Georgia, serif';
     ctx.textAlign = 'left';
-    
-    // Multi line title drawer helper
+
     wrapCanvasText(ctx, book.title, x + 30, y + 60, cardWidth - 50, 32, 4);
-    
-    // Draw Author Text at bottom
+
     ctx.font = '800 16px "Outfit", sans-serif';
     ctx.fillText(book.author.toUpperCase(), x + 30, y + cardHeight - 35, cardWidth - 50);
   });
 
-  // Footer branding tag
   ctx.textAlign = 'center';
   ctx.fillStyle = textSubColor;
   ctx.font = '700 24px "Outfit", sans-serif';
   ctx.fillText('shelfcontrol.app', canvas.width / 2, 1830);
 
-  // 8. Draw Preview scaling onto canvas preview elements
   const previewCtx = canvasPreview.getContext('2d');
   previewCtx.drawImage(canvas, 0, 0, canvasPreview.width, canvasPreview.height);
 }
 
-// Canvas Rounded rectangle drawer helper
 function roundRect(ctx, x, y, width, height, radius, fill, stroke) {
   ctx.beginPath();
   ctx.moveTo(x + radius, y);
@@ -2898,7 +3345,6 @@ function roundRect(ctx, x, y, width, height, radius, fill, stroke) {
   if (stroke) ctx.stroke();
 }
 
-// Canvas text wrap utility
 function wrapCanvasText(ctx, text, x, y, maxWidth, lineHeight, maxLines) {
   const words = text.split(' ');
   let line = '';
@@ -2927,35 +3373,33 @@ function wrapCanvasText(ctx, text, x, y, maxWidth, lineHeight, maxLines) {
 // 8. SCHEDULER: DAILY REMINDERS ALARM
 function checkReadingReminders() {
   if (!profile || !profile.reminderEnabled) return;
-  
+
   const now = new Date();
   const todayStr = now.toISOString().split('T')[0];
-  
-  // Trigger once daily
+
   if (profile.lastReminderSentDate === todayStr) return;
-  
+
   const [remHour, remMin] = profile.reminderTime.split(':').map(Number);
   if (now.getHours() > remHour || (now.getHours() === remHour && now.getMinutes() >= remMin)) {
     if (Notification.permission === 'granted') {
       new Notification("📚 Shelf Control Daily Reminder", {
-        body: `Hey ${profile.name}! It's time for your daily reading challenge. Let's flip some pages!`,
+        body: `Hey ${profile.username}! It's time for your daily reading challenge. Let's flip some pages!`,
         icon: 'https://covers.openlibrary.org/b/isbn/9780593465066-M.jpg'
       });
       profile.lastReminderSentDate = todayStr;
-      saveUserProfile(profile);
+      saveLocalProfile();
     }
   }
 }
 
-// Premium Toast alert system
+// Toast alert system
 function showToast(msg) {
   const oldToast = document.querySelector('.premium-toast');
   if (oldToast) oldToast.remove();
 
   const toast = document.createElement('div');
   toast.className = 'premium-toast glass';
-  
-  // Apply style parameters in script to avoid stylesheet breaking
+
   Object.assign(toast.style, {
     position: 'fixed',
     bottom: '32px',
@@ -2978,14 +3422,12 @@ function showToast(msg) {
   toast.innerHTML = `<i data-lucide="sparkles" style="color:var(--accent-yellow)"></i> <span>${msg}</span>`;
   document.body.appendChild(toast);
   lucide.createIcons();
-  
-  // Animate in
+
   setTimeout(() => {
     toast.style.opacity = '1';
     toast.style.transform = 'translateX(-50%) translateY(0)';
   }, 50);
-  
-  // Remove out
+
   setTimeout(() => {
     toast.style.opacity = '0';
     toast.style.transform = 'translateX(-50%) translateY(-20px)';

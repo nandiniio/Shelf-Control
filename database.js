@@ -1,5 +1,8 @@
 import { supabase } from './supabase.js';
 
+// ==========================================
+// ERROR HANDLING HELPER
+// ==========================================
 export function getFriendlyDbError(error) {
   if (!error) return 'Something went wrong. Please try again.';
 
@@ -35,6 +38,9 @@ export function getFriendlyDbError(error) {
   return message;
 }
 
+// ==========================================
+// MAPPING HELPERS
+// ==========================================
 const DEFAULT_LIST_COLORS = {
   'Currently Reading': 'blue',
   'Want to Read': 'yellow',
@@ -65,8 +71,8 @@ export function mapListRow(row, index = 0) {
     icon,
     color,
     isSystem: row.is_default === true,
-    userId: row.user_id,
-    isPublic: row.is_public === true
+    isPublic: row.is_public === true,
+    userId: row.user_id
   };
 }
 
@@ -97,6 +103,9 @@ function getRandomPastelColor() {
   return colors[Math.floor(Math.random() * colors.length)];
 }
 
+// ==========================================
+// LISTS FUNCTIONS
+// ==========================================
 export async function fetchLists(userId) {
   const { data, error } = await supabase
     .from('lists')
@@ -121,7 +130,8 @@ export async function createList(userId, name, icon, color) {
       user_id: userId,
       name,
       icon: iconValue,
-      is_default: false
+      is_default: false,
+      is_public: false
     })
     .select()
     .maybeSingle();
@@ -165,6 +175,37 @@ export async function deleteList(listId) {
   return { error: null };
 }
 
+export async function fetchPublicLists(userId) {
+  const { data, error } = await supabase
+    .from('lists')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('is_public', true)
+    .order('name', { ascending: true });
+
+  if (error) {
+    return { lists: [], error: getFriendlyDbError(error) };
+  }
+  return { lists: (data || []).map(mapListRow), error: null };
+}
+
+export async function updateListPublicStatus(listId, isPublic) {
+  const { data, error } = await supabase
+    .from('lists')
+    .update({ is_public: isPublic })
+    .eq('id', listId)
+    .select()
+    .maybeSingle();
+
+  if (error) {
+    return { list: null, error: getFriendlyDbError(error) };
+  }
+  return { list: data ? mapListRow(data) : null, error: null };
+}
+
+// ==========================================
+// SAVED BOOKS FUNCTIONS
+// ==========================================
 export async function fetchSavedBooks(userId) {
   const { data, error } = await supabase
     .from('saved_books')
@@ -290,6 +331,40 @@ export async function getListBookCounts(userId) {
   return { counts, error: null };
 }
 
+export async function updateBookCompletedAt(bookId, completedAt) {
+  const { data, error } = await supabase
+    .from('saved_books')
+    .update({ completed_at: completedAt })
+    .eq('id', bookId)
+    .select()
+    .maybeSingle();
+
+  if (error) {
+    return { book: null, error: getFriendlyDbError(error) };
+  }
+  return { book: data ? mapSavedBookRow(data) : null, error: null };
+}
+
+export async function fetchCompletedBooksByYear(userId, year) {
+  const startDate = `${year}-01-01`;
+  const endDate = `${year}-12-31`;
+  const { data, error } = await supabase
+    .from('saved_books')
+    .select('*')
+    .eq('user_id', userId)
+    .gte('completed_at', startDate)
+    .lte('completed_at', endDate)
+    .order('completed_at', { ascending: false });
+
+  if (error) {
+    return { books: [], error: getFriendlyDbError(error) };
+  }
+  return { books: (data || []).map(mapSavedBookRow), error: null };
+}
+
+// ==========================================
+// FOLLOWS & USERS FUNCTIONS
+// ==========================================
 export async function followUser(followerId, followingId) {
   if (followerId === followingId) {
     return { error: 'You cannot follow yourself.' };
@@ -361,6 +436,40 @@ export async function getFollowing(userId) {
   return { userIds: (data || []).map(row => row.following_id), error: null };
 }
 
+export async function getFollowerProfiles(userId) {
+  const { userIds, error: idsError } = await getFollowers(userId);
+  if (idsError) return { profiles: [], error: idsError };
+  if (!userIds || userIds.length === 0) return { profiles: [], error: null };
+
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('*')
+    .in('id', userIds);
+
+  if (error) {
+    return { profiles: [], error: getFriendlyDbError(error) };
+  }
+
+  return { profiles: data || [], error: null };
+}
+
+export async function getFollowingProfiles(userId) {
+  const { userIds, error: idsError } = await getFollowing(userId);
+  if (idsError) return { profiles: [], error: idsError };
+  if (!userIds || userIds.length === 0) return { profiles: [], error: null };
+
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('*')
+    .in('id', userIds);
+
+  if (error) {
+    return { profiles: [], error: getFriendlyDbError(error) };
+  }
+
+  return { profiles: data || [], error: null };
+}
+
 export async function getFollowCounts(userId) {
   const [followersResult, followingResult] = await Promise.all([
     supabase.from('follows').select('*', { count: 'exact', head: true }).eq('following_id', userId),
@@ -384,7 +493,7 @@ export async function getFollowCounts(userId) {
 export async function findUserByEmail(email) {
   const { data, error } = await supabase
     .from('users')
-    .select('id, email, name, bio, avatar_url')
+    .select('id, email, name')
     .eq('email', email.trim().toLowerCase())
     .maybeSingle();
 
@@ -400,71 +509,48 @@ export async function findUserByEmail(email) {
     user: {
       id: data.id,
       email: data.email,
-      name: data.name || data.email.split('@')[0],
-      bio: data.bio || '',
-      avatarUrl: data.avatar_url || ''
+      name: data.name || data.email.split('@')[0]
     },
     error: null
   };
 }
 
-export async function searchUsersByUsername(query) {
+export async function searchUsersByUsername(query, excludeUserId) {
   if (!query || query.length < 2) {
     return { users: [], error: null };
   }
-
   const { data, error } = await supabase
-    .from('users')
-    .select('id, email, name, bio, avatar_url')
-    .ilike('name', `%${query}%`)
-    .limit(10);
+    .from('profiles')
+    .select('id, username, bio, avatar_url')
+    .ilike('username', `%${query}%`)
+    .neq('id', excludeUserId || '')
+    .limit(20);
 
   if (error) {
     return { users: [], error: getFriendlyDbError(error) };
   }
-
-  return {
-    users: (data || []).map(row => ({
-      id: row.id,
-      email: row.email,
-      name: row.name || row.email.split('@')[0],
-      bio: row.bio || '',
-      avatarUrl: row.avatar_url || ''
-    })),
-    error: null
-  };
+  return { users: data || [], error: null };
 }
 
 export async function getUserProfile(userId) {
   const { data, error } = await supabase
-    .from('users')
-    .select('id, email, name, bio, avatar_url')
+    .from('profiles')
+    .select('*')
     .eq('id', userId)
     .maybeSingle();
 
   if (error) {
     return { user: null, error: getFriendlyDbError(error) };
   }
-
   if (!data) {
-    return { user: null, error: 'User not found.' };
+    return { user: null, error: 'Profile not found.' };
   }
-
-  return {
-    user: {
-      id: data.id,
-      email: data.email,
-      name: data.name || data.email.split('@')[0],
-      bio: data.bio || '',
-      avatarUrl: data.avatar_url || ''
-    },
-    error: null
-  };
+  return { user: data, error: null };
 }
 
 export async function updateUserProfile(userId, updates) {
   const { data, error } = await supabase
-    .from('users')
+    .from('profiles')
     .update(updates)
     .eq('id', userId)
     .select()
@@ -473,107 +559,126 @@ export async function updateUserProfile(userId, updates) {
   if (error) {
     return { user: null, error: getFriendlyDbError(error) };
   }
-
-  if (!data) {
-    return { user: null, error: 'User not found.' };
-  }
-
-  return {
-    user: {
-      id: data.id,
-      email: data.email,
-      name: data.name || data.email.split('@')[0],
-      bio: data.bio || '',
-      avatarUrl: data.avatar_url || ''
-    },
-    error: null
-  };
+  return { user: data, error: null };
 }
 
 export async function uploadAvatar(userId, file) {
-  const fileName = `${userId}/photo.jpg`;
-  const { data, error } = await supabase
-    .storage
+  const filePath = `${userId}/photo.jpg`;
+  const { error: uploadError } = await supabase.storage
     .from('avatars')
-    .upload(fileName, file, { upsert: true });
+    .upload(filePath, file, { upsert: true });
 
-  if (error) {
-    return { url: null, error: getFriendlyDbError(error) };
+  if (uploadError) {
+    return { url: null, error: getFriendlyDbError(uploadError) };
   }
 
-  const { data: { publicUrl } } = supabase
-    .storage
-    .from('avatars')
-    .getPublicUrl(fileName);
+  const { data } = supabase.storage.from('avatars').getPublicUrl(filePath);
+  const { error: updateError } = await supabase
+    .from('profiles')
+    .update({ avatar_url: data.publicUrl })
+    .eq('id', userId);
 
-  return { url: publicUrl, error: null };
+  if (updateError) {
+    return { url: null, error: getFriendlyDbError(updateError) };
+  }
+  return { url: data.publicUrl, error: null };
 }
 
-export async function fetchPublicLists(userId) {
+// ==========================================
+// NOTIFICATIONS FUNCTIONS
+// ==========================================
+export async function createNotification(userId, actorId, type, message) {
   const { data, error } = await supabase
-    .from('lists')
-    .select('*')
-    .eq('user_id', userId)
-    .eq('is_public', true)
-    .order('is_default', { ascending: false })
-    .order('name', { ascending: true });
+    .from('notifications')
+    .insert([
+      { user_id: userId, actor_id: actorId, type: type, message: message }
+    ]);
 
-  if (error) {
-    return { lists: [], error: getFriendlyDbError(error) };
-  }
-
-  return { lists: (data || []).map(mapListRow), error: null };
+  return { data, error: error?.message || null };
 }
 
-export async function updateListPublicStatus(listId, isPublic) {
-  const { data, error } = await supabase
-    .from('lists')
-    .update({ is_public: isPublic })
-    .eq('id', listId)
-    .select()
-    .maybeSingle();
-
-  if (error) {
-    return { list: null, error: getFriendlyDbError(error) };
-  }
-
-  if (!data) {
-    return { list: null, error: 'That list no longer exists.' };
-  }
-
-  return { list: mapListRow(data), error: null };
-}
-
-export async function updateBookCompletedAt(bookId, completedAt) {
-  const { data, error } = await supabase
+ export async function getListBookCountForUser(listId) {
+  const { count, error } = await supabase
     .from('saved_books')
-    .update({ completed_at: completedAt })
-    .eq('id', bookId)
-    .select()
-    .maybeSingle();
+    .select('*', { count: 'exact', head: true })
+    .eq('list_id', listId);
 
   if (error) {
-    return { book: null, error: getFriendlyDbError(error) };
+    return { count: 0, error: getFriendlyDbError(error) };
   }
 
-  return { book: data ? mapSavedBookRow(data) : null, error: null };
+  return { count: count || 0, error: null };
 }
 
-export async function fetchCompletedBooksByYear(userId, year) {
-  const startDate = `${year}-01-01`;
-  const endDate = `${year}-12-31`;
+export async function fetchNotifications(userId) {
+  const { data, error } = await supabase
+    .from('notifications')
+    .select(`
+      id,
+      type,
+      message,
+      created_at,
+      actor:actor_id ( id, username, avatar_url )
+    `)
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false });
+
+  return { notifications: data || [], error: error?.message || null };
+}
+
+// Alias for backwards compatibility
+export const fetchUserNotifications = fetchNotifications;
+
+export async function dismissNotification(notificationId) {
+  const { data, error } = await supabase
+    .from('notifications')
+    .delete()
+    .eq('id', notificationId);
+
+  return { data, error: error?.message || null };
+}
+
+export async function notifyFollowersOfSharedBook(userId, book) {
+  // 1. Get followers and following
+  const { data: followers } = await supabase.from('follows').select('follower_id').eq('following_id', userId);
+  const { data: following } = await supabase.from('follows').select('following_id').eq('follower_id', userId);
+  
+  const connectedIds = new Set();
+  if (followers) followers.forEach(f => connectedIds.add(f.follower_id));
+  if (following) following.forEach(f => connectedIds.add(f.following_id));
+  
+  if (connectedIds.size === 0) return { success: true };
+  
+  // 2. Query saved_books for these users that match the book
+  let query = supabase.from('saved_books')
+    .select('user_id')
+    .in('user_id', Array.from(connectedIds));
+    
+  if (book.isbn13) {
+    query = query.eq('isbn13', book.isbn13);
+  } else {
+    query = query.eq('title', book.title).eq('author', book.author);
+  }
+  
+  const { data: overlappingBooks, error: overlapErr } = await query;
+  
+  if (overlapErr || !overlappingBooks || overlappingBooks.length === 0) {
+    return { success: true };
+  }
+  
+  // Find distinct users who have the book
+  const overlappingUserIds = [...new Set(overlappingBooks.map(b => b.user_id))];
+  
+  const notificationRows = overlappingUserIds.map(uid => ({
+    user_id: uid,
+    actor_id: userId,
+    type: 'shared_book',
+    message: `saved "${book.title}", which is also on your reading list!`
+  }));
 
   const { data, error } = await supabase
-    .from('saved_books')
-    .select('*')
-    .eq('user_id', userId)
-    .gte('completed_at', startDate)
-    .lte('completed_at', endDate)
-    .order('completed_at', { ascending: false });
+    .from('notifications')
+    .insert(notificationRows);
 
-  if (error) {
-    return { books: [], error: getFriendlyDbError(error) };
-  }
-
-  return { books: (data || []).map(mapSavedBookRow), error: null };
+  return { success: !error, error: error?.message || null };
 }
