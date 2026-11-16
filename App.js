@@ -13,6 +13,10 @@ import {
   signOut,
   getSession,
   onAuthStateChange,
+  updateUserPassword,
+  sendPasswordResetEmail,
+  signInWithGoogle,
+  getFriendlyAuthError,
   getDisplayName
 } from './auth.js';
 import {
@@ -57,6 +61,8 @@ let listBookCounts = {};
 let profile = null;
 let notifications = [];
 let currentActiveView = 'home';
+let previousActiveView = 'home';
+let aboutOrigin = 'landing';
 let selectedBookForDetail = null;
 let currentListSubview = null;
 let viewedUserProfile = null;
@@ -65,10 +71,28 @@ let searchRequestId = 0;
 let addBookSearchRequestId = 0;
 let detailBookInitialListIds = new Set();
 let detailListSaveInProgress = false;
+let isPasswordRecovery = false;
 
 // DOM Elements
 
 const appContainer = document.getElementById('app-container');
+const landingScreen = document.getElementById('landing-screen');
+const btnLandingAbout = document.getElementById('btn-landing-about');
+const btnLandingSignin = document.getElementById('btn-landing-signin');
+const btnLandingSignup = document.getElementById('btn-landing-signup');
+const btnHeroSignin = document.getElementById('btn-hero-signin');
+const btnHeroSignup = document.getElementById('btn-hero-signup');
+const btnBottomSignin = document.getElementById('btn-bottom-signin');
+const btnBottomSignup = document.getElementById('btn-bottom-signup');
+const btnLandingThemeToggle = document.getElementById('btn-landing-theme-toggle');
+const landingBrandLogo = document.getElementById('landing-brand-logo');
+const btnBackToLanding = document.getElementById('btn-back-to-landing');
+const onboardingBrand = document.getElementById('onboarding-brand');
+const btnBackAbout = document.getElementById('btn-back-about');
+const backAboutText = document.getElementById('back-about-text');
+const aboutPublicActions = document.getElementById('about-public-actions');
+const btnAboutSignin = document.getElementById('btn-about-signin');
+const btnAboutSignup = document.getElementById('btn-about-signup');
 const onboardingScreen = document.getElementById('onboarding-screen');
 const signinForm = document.getElementById('signin-form');
 const signupForm = document.getElementById('signup-form');
@@ -76,6 +100,20 @@ const signupNameInput = document.getElementById('signup-name');
 const authErrorEl = document.getElementById('auth-error');
 const authTabSignin = document.getElementById('auth-tab-signin');
 const authTabSignup = document.getElementById('auth-tab-signup');
+const authTabs = document.querySelector('.auth-tabs');
+const btnGoogleSignin = document.getElementById('btn-google-signin');
+const btnGoogleSignup = document.getElementById('btn-google-signup');
+const btnForgotPassword = document.getElementById('btn-forgot-password');
+const forgotPasswordForm = document.getElementById('forgot-password-form');
+const forgotEmailInput = document.getElementById('forgot-email');
+const btnCancelForgot = document.getElementById('btn-cancel-forgot');
+const btnForgotDone = document.getElementById('btn-forgot-done');
+const forgotFields = document.getElementById('forgot-fields');
+const forgotSuccessState = document.getElementById('forgot-success-state');
+const resetPasswordForm = document.getElementById('reset-password-form');
+const resetPasswordInput = document.getElementById('reset-password');
+const resetConfirmPasswordInput = document.getElementById('reset-confirm-password');
+const btnCancelReset = document.getElementById('btn-cancel-reset');
 
 const headerUsername = document.getElementById('header-username');
 const btnThemeToggle = document.getElementById('btn-theme-toggle');
@@ -135,17 +173,213 @@ function requireAuth(actionLabel = 'do that') {
   return false;
 }
 
+function showLandingScreen() {
+  isPasswordRecovery = false;
+  document.body.classList.remove('public-about-mode');
+  if (appContainer) appContainer.classList.remove('public-about-view');
+  if (landingScreen) {
+    landingScreen.classList.remove('landing-hidden');
+    landingScreen.classList.add('landing-active');
+  }
+  onboardingScreen.classList.add('onboarding-hidden');
+  onboardingScreen.classList.remove('onboarding-active');
+  appContainer.classList.add('app-hidden');
+  hideAuthError();
+  lucide.createIcons();
+}
+
 function showLoginScreen() {
+  isPasswordRecovery = false;
+  document.body.classList.remove('public-about-mode');
+  if (appContainer) appContainer.classList.remove('public-about-view');
+  if (landingScreen) {
+    landingScreen.classList.add('landing-hidden');
+    landingScreen.classList.remove('landing-active');
+  }
   onboardingScreen.classList.add('onboarding-active');
   onboardingScreen.classList.remove('onboarding-hidden');
   appContainer.classList.add('app-hidden');
+  if (authTabs) authTabs.classList.remove('hidden');
+  if (resetPasswordForm) resetPasswordForm.classList.add('hidden');
+  if (forgotPasswordForm) forgotPasswordForm.classList.add('hidden');
+  signinForm.classList.remove('hidden');
+  signupForm.classList.add('hidden');
+  authTabSignin.classList.add('active');
+  authTabSignup.classList.remove('active');
+  resetGoogleAuthButtons();
   hideAuthError();
+  lucide.createIcons();
+}
+
+function showSignupScreen() {
+  isPasswordRecovery = false;
+  document.body.classList.remove('public-about-mode');
+  if (appContainer) appContainer.classList.remove('public-about-view');
+  if (landingScreen) {
+    landingScreen.classList.add('landing-hidden');
+    landingScreen.classList.remove('landing-active');
+  }
+  onboardingScreen.classList.add('onboarding-active');
+  onboardingScreen.classList.remove('onboarding-hidden');
+  appContainer.classList.add('app-hidden');
+  if (authTabs) authTabs.classList.remove('hidden');
+  if (resetPasswordForm) resetPasswordForm.classList.add('hidden');
+  if (forgotPasswordForm) forgotPasswordForm.classList.add('hidden');
+  signupForm.classList.remove('hidden');
+  signinForm.classList.add('hidden');
+  authTabSignup.classList.add('active');
+  authTabSignin.classList.remove('active');
+  resetGoogleAuthButtons();
+  hideAuthError();
+  lucide.createIcons();
+}
+
+function showForgotPasswordScreen() {
+  isPasswordRecovery = false;
+  document.body.classList.remove('public-about-mode');
+  if (appContainer) appContainer.classList.remove('public-about-view');
+  if (landingScreen) {
+    landingScreen.classList.add('landing-hidden');
+    landingScreen.classList.remove('landing-active');
+  }
+  onboardingScreen.classList.add('onboarding-active');
+  onboardingScreen.classList.remove('onboarding-hidden');
+  appContainer.classList.add('app-hidden');
+  if (authTabs) authTabs.classList.add('hidden');
+  signinForm.classList.add('hidden');
+  signupForm.classList.add('hidden');
+  if (resetPasswordForm) resetPasswordForm.classList.add('hidden');
+  if (forgotPasswordForm) {
+    forgotPasswordForm.classList.remove('hidden');
+    if (forgotFields) forgotFields.classList.remove('hidden');
+    if (forgotSuccessState) forgotSuccessState.classList.add('hidden');
+  }
+  hideAuthError();
+  lucide.createIcons();
+}
+
+function showResetPasswordScreen() {
+  isPasswordRecovery = true;
+  document.body.classList.remove('public-about-mode');
+  if (appContainer) appContainer.classList.remove('public-about-view');
+  if (landingScreen) {
+    landingScreen.classList.add('landing-hidden');
+    landingScreen.classList.remove('landing-active');
+  }
+  onboardingScreen.classList.add('onboarding-active');
+  onboardingScreen.classList.remove('onboarding-hidden');
+  appContainer.classList.add('app-hidden');
+  if (authTabs) authTabs.classList.add('hidden');
+  signinForm.classList.add('hidden');
+  signupForm.classList.add('hidden');
+  if (forgotPasswordForm) forgotPasswordForm.classList.add('hidden');
+  if (resetPasswordForm) resetPasswordForm.classList.remove('hidden');
+  hideAuthError();
+  lucide.createIcons();
+}
+
+function cleanUpAuthUrl() {
+  if (window.history && window.history.replaceState) {
+    const cleanUrl = window.location.pathname;
+    window.history.replaceState({}, document.title, cleanUrl);
+  }
+}
+
+function resetGoogleAuthButtons() {
+  const googleBtns = [
+    document.getElementById('btn-google-signin'),
+    document.getElementById('btn-google-signup')
+  ];
+  googleBtns.forEach(btn => {
+    if (btn) {
+      btn.disabled = false;
+      const text = btn.querySelector('.btn-google-text');
+      if (text) text.textContent = 'Continue with Google';
+    }
+  });
+}
+
+async function handleGoogleSignIn(buttonEl) {
+  hideAuthError();
+  const textSpan = buttonEl?.querySelector('.btn-google-text');
+  const originalText = textSpan?.textContent || 'Continue with Google';
+
+  if (buttonEl) {
+    buttonEl.disabled = true;
+    if (textSpan) textSpan.textContent = 'Connecting to Google...';
+  }
+
+  const { error } = await signInWithGoogle();
+  if (error) {
+    showAuthError(error);
+    if (buttonEl) {
+      buttonEl.disabled = false;
+      if (textSpan) textSpan.textContent = originalText;
+    }
+  }
 }
 
 function showAppScreen() {
+  document.body.classList.remove('public-about-mode');
+  if (appContainer) appContainer.classList.remove('public-about-view');
+  if (landingScreen) {
+    landingScreen.classList.add('landing-hidden');
+    landingScreen.classList.remove('landing-active');
+  }
   onboardingScreen.classList.add('onboarding-hidden');
   onboardingScreen.classList.remove('onboarding-active');
   appContainer.classList.remove('app-hidden');
+}
+
+function showAboutScreen(origin = 'landing') {
+  aboutOrigin = origin;
+  isPasswordRecovery = false;
+  if (landingScreen) {
+    landingScreen.classList.add('landing-hidden');
+    landingScreen.classList.remove('landing-active');
+  }
+  onboardingScreen.classList.add('onboarding-hidden');
+  onboardingScreen.classList.remove('onboarding-active');
+  appContainer.classList.remove('app-hidden');
+
+  const backText = document.getElementById('back-about-text');
+  const publicActions = document.getElementById('about-public-actions');
+
+  if (origin === 'landing') {
+    document.body.classList.add('public-about-mode');
+    appContainer.classList.add('public-about-view');
+    if (backText) backText.textContent = 'Back to Home';
+    if (publicActions) {
+      publicActions.style.display = isAuthenticated() ? 'none' : 'inline-flex';
+    }
+    navItems.forEach(item => item.classList.remove('active'));
+  } else {
+    document.body.classList.remove('public-about-mode');
+    appContainer.classList.remove('public-about-view');
+    if (backText) backText.textContent = 'Back';
+    if (publicActions) {
+      publicActions.style.display = 'none';
+    }
+    navItems.forEach(item => {
+      if (item.dataset.view === 'about') {
+        item.classList.add('active');
+      } else {
+        item.classList.remove('active');
+      }
+    });
+  }
+
+  currentActiveView = 'about';
+  appViews.forEach(view => {
+    if (view.id === 'view-about') {
+      view.classList.add('view-active');
+    } else {
+      view.classList.remove('view-active');
+    }
+  });
+
+  hideAuthError();
+  lucide.createIcons();
 }
 
 function getProfileStorageKey() {
@@ -225,6 +459,15 @@ async function loadUserData() {
     profile.username = profile.username || getDisplayName(currentUser);
   }
 
+  // If user signed in with Google and has no custom avatar yet, use Google avatar
+  if (!profile.avatarUrl) {
+    const oauthAvatar = currentUser.user_metadata?.avatar_url || currentUser.user_metadata?.picture;
+    if (oauthAvatar) {
+      profile.avatarUrl = oauthAvatar;
+      currentUser.avatar_url = oauthAvatar;
+    }
+  }
+
   const [listsResult, booksResult, countsResult, notificationsResult] = await Promise.all([
     fetchLists(currentUser.id),
     fetchSavedBooks(currentUser.id),
@@ -278,19 +521,57 @@ async function initApp() {
   const savedDarkMode = localStorage.getItem('shelf_control_dark_mode') === 'true';
   setTheme(savedDarkMode);
 
+  const hasRecoveryUrl = window.location.hash.includes('type=recovery') || window.location.search.includes('type=recovery');
+  if (hasRecoveryUrl) {
+    isPasswordRecovery = true;
+  }
+
+  // Check for OAuth return errors (e.g. user cancelled Google sign-in)
+  const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+  const searchParams = new URLSearchParams(window.location.search);
+  const oauthErrorDesc = hashParams.get('error_description') || searchParams.get('error_description');
+  const oauthError = hashParams.get('error') || searchParams.get('error');
+
+  if (oauthError || oauthErrorDesc) {
+    const friendlyError = getFriendlyAuthError({ message: oauthErrorDesc || oauthError });
+    showAuthError(friendlyError);
+    showLoginScreen();
+    cleanUpAuthUrl();
+  }
+
   const { session, error } = await getSession();
   if (error) showToast(error);
 
   if (session?.user) {
-    await handleAuthenticatedUser(session.user);
+    if (isPasswordRecovery) {
+      showResetPasswordScreen();
+    } else {
+      await handleAuthenticatedUser(session.user);
+      cleanUpAuthUrl();
+    }
   } else {
-    showLoginScreen();
+    if (isPasswordRecovery) {
+      showResetPasswordScreen();
+    } else if (!oauthError && !oauthErrorDesc) {
+      showLandingScreen();
+    }
   }
 
-  onAuthStateChange(async (session) => {
+  onAuthStateChange(async (event, session) => {
+    if (event === 'PASSWORD_RECOVERY') {
+      isPasswordRecovery = true;
+      showResetPasswordScreen();
+      return;
+    }
+
+    if (isPasswordRecovery) {
+      return;
+    }
+
     if (session?.user) {
       if (!currentUser || currentUser.id !== session.user.id) {
         await handleAuthenticatedUser(session.user);
+        cleanUpAuthUrl();
       }
     } else {
       currentUser = null;
@@ -300,7 +581,7 @@ async function initApp() {
       notifications = [];
       profile = null;
       updateNotificationBadge();
-      showLoginScreen();
+      showLandingScreen();
     }
   });
 
@@ -315,17 +596,24 @@ function setTheme(isDark) {
   darkMode = isDark;
   localStorage.setItem('shelf_control_dark_mode', darkMode);
 
-  const icon = btnThemeToggle.querySelector('i');
+  const icon = btnThemeToggle ? btnThemeToggle.querySelector('i') : null;
+  const landingIcon = btnLandingThemeToggle ? btnLandingThemeToggle.querySelector('i') : null;
 
   if (darkMode) {
     document.body.classList.add('dark-theme');
     if (icon) {
       icon.setAttribute('data-lucide', 'sun');
     }
+    if (landingIcon) {
+      landingIcon.setAttribute('data-lucide', 'sun');
+    }
   } else {
     document.body.classList.remove('dark-theme');
     if (icon) {
       icon.setAttribute('data-lucide', 'moon');
+    }
+    if (landingIcon) {
+      landingIcon.setAttribute('data-lucide', 'moon');
     }
   }
 
@@ -608,20 +896,81 @@ function setupEventListeners() {
     });
   }
 
+  // Landing Page actions
+  const signupButtons = [btnLandingSignup, btnHeroSignup, btnBottomSignup];
+  signupButtons.forEach(btn => {
+    btn?.addEventListener('click', () => showSignupScreen());
+  });
+
+  const signinButtons = [btnLandingSignin, btnHeroSignin, btnBottomSignin];
+  signinButtons.forEach(btn => {
+    btn?.addEventListener('click', () => showLoginScreen());
+  });
+
+  const backHomeButtons = [btnBackToLanding, onboardingBrand, landingBrandLogo];
+  backHomeButtons.forEach(btn => {
+    btn?.addEventListener('click', () => showLandingScreen());
+  });
+
+  btnLandingThemeToggle?.addEventListener('click', () => {
+    setTheme(!darkMode);
+  });
+
+  btnLandingAbout?.addEventListener('click', () => {
+    showAboutScreen('landing');
+  });
+
+  btnBackAbout?.addEventListener('click', () => {
+    if (aboutOrigin === 'landing') {
+      document.body.classList.remove('public-about-mode');
+      if (appContainer) appContainer.classList.remove('public-about-view');
+      showLandingScreen();
+    } else {
+      const targetView = (previousActiveView && previousActiveView !== 'about') ? previousActiveView : 'home';
+      switchView(targetView);
+    }
+  });
+
+  btnAboutSignin?.addEventListener('click', () => {
+    document.body.classList.remove('public-about-mode');
+    if (appContainer) appContainer.classList.remove('public-about-view');
+    showLoginScreen();
+  });
+
+  btnAboutSignup?.addEventListener('click', () => {
+    document.body.classList.remove('public-about-mode');
+    if (appContainer) appContainer.classList.remove('public-about-view');
+    showSignupScreen();
+  });
+
+  // Google OAuth triggers
+  const btnGoogleSignin = document.getElementById('btn-google-signin');
+  const btnGoogleSignup = document.getElementById('btn-google-signup');
+  btnGoogleSignin?.addEventListener('click', () => handleGoogleSignIn(btnGoogleSignin));
+  btnGoogleSignup?.addEventListener('click', () => handleGoogleSignIn(btnGoogleSignup));
+
   // Auth tab switching
   authTabSignin.addEventListener('click', () => {
+    isPasswordRecovery = false;
+    if (resetPasswordForm) resetPasswordForm.classList.add('hidden');
+    if (forgotPasswordForm) forgotPasswordForm.classList.add('hidden');
     authTabSignin.classList.add('active');
     authTabSignup.classList.remove('active');
     signinForm.classList.remove('hidden');
     signupForm.classList.add('hidden');
+    resetGoogleAuthButtons();
     hideAuthError();
   });
 
   authTabSignup.addEventListener('click', () => {
+    isPasswordRecovery = false;
+    if (resetPasswordForm) resetPasswordForm.classList.add('hidden');
+    if (forgotPasswordForm) forgotPasswordForm.classList.add('hidden');
     authTabSignup.classList.add('active');
     authTabSignin.classList.remove('active');
     signupForm.classList.remove('hidden');
     signinForm.classList.add('hidden');
+    resetGoogleAuthButtons();
     hideAuthError();
   });
 
@@ -672,6 +1021,123 @@ function setupEventListeners() {
       showAuthError('Check your email to confirm your account, then sign in.');
     }
   });
+
+  if (resetPasswordForm) {
+    resetPasswordForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      hideAuthError();
+
+      const newPassword = resetPasswordInput.value;
+      const confirmPassword = resetConfirmPasswordInput.value;
+
+      if (!newPassword || newPassword.length < 6) {
+        showAuthError('Password must be at least 6 characters.');
+        return;
+      }
+
+      if (newPassword !== confirmPassword) {
+        showAuthError('Passwords do not match.');
+        return;
+      }
+
+      const btn = document.getElementById('btn-reset-password');
+      if (btn) btn.disabled = true;
+
+      const { user, error } = await updateUserPassword(newPassword);
+      if (btn) btn.disabled = false;
+
+      if (error) {
+        showAuthError(error);
+        return;
+      }
+
+      isPasswordRecovery = false;
+      resetPasswordForm.reset();
+      cleanUpAuthUrl();
+      showToast('Password updated successfully!');
+
+      if (user) {
+        await handleAuthenticatedUser(user);
+        switchView('home');
+      } else {
+        showLoginScreen();
+      }
+    });
+  }
+
+  if (btnCancelReset) {
+    btnCancelReset.addEventListener('click', () => {
+      cleanUpAuthUrl();
+      showLoginScreen();
+    });
+  }
+
+  // Forgot Password interactions
+  if (btnForgotPassword) {
+    btnForgotPassword.addEventListener('click', () => {
+      hideAuthError();
+      const currentEmail = document.getElementById('signin-email').value.trim();
+      if (currentEmail && forgotEmailInput) {
+        forgotEmailInput.value = currentEmail;
+      }
+      showForgotPasswordScreen();
+    });
+  }
+
+  if (btnCancelForgot) {
+    btnCancelForgot.addEventListener('click', () => {
+      showLoginScreen();
+    });
+  }
+
+  if (btnForgotDone) {
+    btnForgotDone.addEventListener('click', () => {
+      showLoginScreen();
+    });
+  }
+
+  if (forgotPasswordForm) {
+    forgotPasswordForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      hideAuthError();
+
+      const email = forgotEmailInput.value.trim();
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!email || !emailRegex.test(email)) {
+        showAuthError('Please enter a valid email address.');
+        return;
+      }
+
+      const btn = document.getElementById('btn-send-reset');
+      const originalBtnHtml = btn ? btn.innerHTML : '';
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<span>Sending link...</span><i data-lucide="loader-2" class="spin"></i>';
+        lucide.createIcons();
+      }
+
+      const { error } = await sendPasswordResetEmail(email);
+
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = originalBtnHtml;
+        lucide.createIcons();
+      }
+
+      if (error && (error.toLowerCase().includes('network') || error.toLowerCase().includes('rate limit') || error.toLowerCase().includes('too many requests'))) {
+        showAuthError(error);
+        return;
+      }
+
+      // To avoid revealing whether a user exists, show confirmation for all other responses
+      if (forgotFields) forgotFields.classList.add('hidden');
+      if (forgotSuccessState) {
+        forgotSuccessState.classList.remove('hidden');
+        lucide.createIcons();
+      }
+      showToast('Password reset link sent! Check your inbox.');
+    });
+  }
 
   // Tab switching links
   navItems.forEach(item => {
@@ -1039,19 +1505,7 @@ function setupEventListeners() {
     document.querySelector('.profile-actions-grid').classList.remove('hidden');
   });
 
-  // Follow tabs switching
-  document.querySelectorAll('.follow-tab').forEach(tab => {
-    tab.addEventListener('click', () => {
-      document.querySelectorAll('.follow-tab').forEach(t => t.classList.remove('active'));
-      tab.classList.add('active');
 
-      const tabName = tab.dataset.tab;
-      document.getElementById('followers-grid').classList.toggle('hidden', tabName !== 'followers');
-      document.getElementById('following-grid').classList.toggle('hidden', tabName !== 'following');
-
-      renderFollowSection(tabName);
-    });
-  });
 
   // Profile - Sign Out
   document.getElementById('btn-reset-data').addEventListener('click', async () => {
@@ -1068,7 +1522,7 @@ function setupEventListeners() {
       notifications = [];
       profile = null;
       updateNotificationBadge();
-      showLoginScreen();
+      showLandingScreen();
       showToast('Signed out successfully.');
     }
   });
@@ -1394,6 +1848,20 @@ function setupDragAndDrop() {
 
 // VIEW SWITCHER
 function switchView(viewId) {
+  if (currentActiveView !== 'about') {
+    previousActiveView = currentActiveView;
+  }
+
+  if (viewId === 'about') {
+    aboutOrigin = 'sidebar';
+    document.body.classList.remove('public-about-mode');
+    if (appContainer) appContainer.classList.remove('public-about-view');
+    const backText = document.getElementById('back-about-text');
+    if (backText) backText.textContent = 'Back';
+    const publicActions = document.getElementById('about-public-actions');
+    if (publicActions) publicActions.style.display = 'none';
+  }
+
   currentActiveView = viewId;
 
   navItems.forEach(item => {
@@ -1444,6 +1912,9 @@ function renderActiveView() {
       break;
     case 'profile':
       renderProfile();
+      break;
+    case 'about':
+      // Static content, icons refreshed by switchView
       break;
   }
 }
@@ -1692,67 +2163,9 @@ async function renderProfileFollowStats() {
   if (!error) {
     const followersEl = document.getElementById('profile-followers-count');
     const followingEl = document.getElementById('profile-following-count');
-    const tabFollowersEl = document.getElementById('profile-tab-followers-count');
-    const tabFollowingEl = document.getElementById('profile-tab-following-count');
     if (followersEl) followersEl.textContent = followers;
     if (followingEl) followingEl.textContent = following;
-    if (tabFollowersEl) tabFollowersEl.textContent = followers;
-    if (tabFollowingEl) tabFollowingEl.textContent = following;
   }
-  
-  renderFollowSection('followers');
-}
-
-async function renderFollowSection(tabName) {
-  if (!currentUser) return;
-
-  const gridId = tabName === 'followers' ? 'followers-grid' : 'following-grid';
-  const grid = document.getElementById(gridId);
-
-  if (!grid) return;
-
-  grid.innerHTML = '<div class="empty-state"><i data-lucide="loader-2"></i><p>Loading...</p></div>';
-  lucide.createIcons();
-
-  const userIdsResult = tabName === 'followers'
-    ? await getFollowers(currentUser.id)
-    : await getFollowing(currentUser.id);
-
-  if (userIdsResult.error) {
-    grid.innerHTML = `<div class="empty-state"><i data-lucide="alert-circle"></i><p>${userIdsResult.error}</p></div>`;
-    lucide.createIcons();
-    return;
-  }
-
-  if (userIdsResult.userIds.length === 0) {
-    const message = tabName === 'followers'
-      ? "No followers yet. Share your profile to get discovered!"
-      : "Not following anyone yet. Search for readers to follow!";
-    grid.innerHTML = `<div class="empty-state"><i data-lucide="users"></i><p>${message}</p></div>`;
-    lucide.createIcons();
-    return;
-  }
-
-  const userPromises = userIdsResult.userIds.map(userId => getUserProfile(userId));
-  const userResults = await Promise.all(userPromises);
-
-  const validUsers = userResults.filter(result => !result.error && result.profile).map(result => result.profile);
-
-  if (validUsers.length === 0) {
-    grid.innerHTML = `<div class="empty-state"><i data-lucide="users"></i><p>No users found.</p></div>`;
-    lucide.createIcons();
-    return;
-  }
-
-  grid.innerHTML = '';
-
-  for (const user of validUsers) {
-    const { following: userIsFollowed } = await isFollowing(currentUser.id, user.id);
-    const card = createUserCard(user, userIsFollowed);
-    grid.appendChild(card);
-  }
-
-  lucide.createIcons();
 }
 
 function createUserCard(user, isFollowing) {
@@ -2457,7 +2870,7 @@ function renderProfile() {
 
   // Render Profile Avatar Picture or Initials Fallback
   const avatarBox = document.getElementById('profile-avatar-box') || profileInitials?.parentElement;
-  const activeAvatarUrl = currentUser?.avatar_url || profile?.avatarUrl;
+  const activeAvatarUrl = profile?.avatarUrl || currentUser?.avatar_url;
 
   if (activeAvatarUrl && avatarBox) {
     avatarBox.innerHTML = `<img src="${activeAvatarUrl}" alt="Profile" style="width:100%; height:100%; object-fit:cover; border-radius:50%;" />`;
@@ -2466,8 +2879,8 @@ function renderProfile() {
   }
 
   const profileEmail = document.getElementById('profile-email');
-  if (profileEmail && currentUser) {
-    profileEmail.textContent = currentUser.email;
+  if (profileEmail) {
+    profileEmail.textContent = profile?.email || currentUser?.email || '';
   }
 
   renderProfileFollowStats();

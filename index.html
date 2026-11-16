@@ -23,10 +23,218 @@
     <div class="blob blob-3"></div>
   </div>
 
+  <!-- PUBLIC LANDING / WELCOME SCREEN -->
+  <div id="landing-screen" class="landing-screen landing-active">
+    <!-- Landing Navigation -->
+    <header class="landing-header">
+      <div class="landing-container landing-nav-inner">
+        <div class="landing-brand" id="landing-brand-logo" style="cursor: pointer;">
+          <div class="logo-mark landing-logo-mark">
+            <i data-lucide="library" class="logo-icon"></i>
+          </div>
+          <div class="landing-brand-info">
+            <span class="landing-brand-title">Shelf Control</span>
+            <span class="landing-brand-tagline">because your books won't control themselves</span>
+          </div>
+        </div>
+
+        <div class="landing-nav-actions">
+          <button type="button" id="btn-landing-theme-toggle" class="btn-theme-toggle animate-btn" title="Toggle Dark/Light Mode">
+            <i data-lucide="moon"></i>
+          </button>
+          <button type="button" id="btn-landing-about" class="btn-secondary animate-btn landing-nav-btn">
+            <span>About</span>
+          </button>
+          <button type="button" id="btn-landing-signin" class="btn-secondary animate-btn landing-nav-btn">
+            <span>Sign In</span>
+          </button>
+          <button type="button" id="btn-landing-signup" class="btn-primary animate-btn landing-nav-btn">
+            <span>Get Started</span>
+            <i data-lucide="arrow-right"></i>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Landing Content -->
+    <main class="landing-main">
+      <!-- Hero Section -->
+      <section class="landing-hero-section">
+        <div class="landing-container landing-hero-grid">
+          <!-- Hero Text -->
+          <div class="landing-hero-content">
+            <div class="landing-badge glass animate-fade-in">
+              <i data-lucide="sparkles"></i>
+              <span>Your Sanctuary for Reading</span>
+            </div>
+
+            <h1 class="landing-hero-title">
+              Your books.<br>
+              Your space.<br>
+              <span class="editorial-accent">Your story.</span>
+            </h1>
+
+            <p class="landing-hero-desc">
+              Shelf Control helps you curate reading lists, celebrate reading goals, and discover books that make you swear you'll read <em>just one more chapter</em>.
+            </p>
+
+            <div class="landing-hero-cta-group">
+              <button type="button" id="btn-hero-signup" class="btn-primary animate-btn hero-cta-btn">
+                <span>Get Started. It's Free</span>
+                <i data-lucide="arrow-right"></i>
+              </button>
+              <button type="button" id="btn-hero-signin" class="btn-secondary animate-btn hero-secondary-btn">
+                <span>Sign In</span>
+                <i data-lucide="log-in"></i>
+              </button>
+            </div>
+
+            <div class="landing-hero-quote glass">
+              <i data-lucide="quote" class="quote-symbol"></i>
+              <p>"A reading tracker for people who romanticize their lives and buy books faster than they finish them."</p>
+            </div>
+          </div>
+
+          <!-- Hero Visual -->
+          <div class="landing-hero-visual-wrap">
+            <div class="landing-hero-card glass">
+              <div class="hero-image-frame">
+                <img src="/hero-reading.jpg" alt="Cozy reading nook with bookshelves, warm light, and coffee" class="hero-reading-img" />
+              </div>
+
+              <!-- Floating Micro-Widgets -->
+              <div class="floating-chip chip-streak glass">
+                <div class="chip-icon-box chip-amber">
+                  <i data-lucide="flame"></i>
+                </div>
+                <div class="chip-text">
+                  <span class="chip-label">Reading Streak</span>
+                  <span class="chip-val">14 Days Strong</span>
+                </div>
+              </div>
+
+              <div class="floating-chip chip-goal glass">
+                <div class="chip-icon-box chip-green">
+                  <i data-lucide="bookmark-check"></i>
+                </div>
+                <div class="chip-text">
+                  <span class="chip-label">2026 Challenge</span>
+                  <span class="chip-val">24 of 30 Books</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Features Section -->
+      <section class="landing-features-section">
+        <div class="landing-container">
+          <div class="landing-section-header">
+            <span class="section-kicker">Thoughtfully Crafted</span>
+            <h2 class="landing-section-title">Everything your bookshelf deserves</h2>
+            <p class="landing-section-subtitle">
+              Designed to make tracking your reading feel as cozy, colorful, and rewarding as curling up with a new book.
+            </p>
+          </div>
+
+          <div class="landing-features-grid">
+            <!-- Feature 1 -->
+            <div class="landing-feature-card glass">
+              <div class="feature-icon-box feat-accent-1">
+                <i data-lucide="library"></i>
+              </div>
+              <h3 class="feature-title">Curate Custom Shelves</h3>
+              <p class="feature-desc">
+                Organise books into personalized lists, TBR piles, or seasonal favorites with custom colors, privacy controls, and easy drag-and-drop.
+              </p>
+            </div>
+
+            <!-- Feature 2 -->
+            <div class="landing-feature-card glass">
+              <div class="feature-icon-box feat-accent-2">
+                <i data-lucide="target"></i>
+              </div>
+              <h3 class="feature-title">Goals & Reading Streaks</h3>
+              <p class="feature-desc">
+                Set annual reading targets, monitor reading velocity with clean dashboards, and build daily habits with gentle reminders.
+              </p>
+            </div>
+
+            <!-- Feature 3 -->
+            <div class="landing-feature-card glass">
+              <div class="feature-icon-box feat-accent-3">
+                <i data-lucide="compass"></i>
+              </div>
+              <h3 class="feature-title">Discover Your Next Read</h3>
+              <p class="feature-desc">
+                Explore curated genre recommendations, search millions of titles via Open Library, and pull in covers and edition metadata seamlessly.
+              </p>
+            </div>
+
+            <!-- Feature 4 -->
+            <div class="landing-feature-card glass">
+              <div class="feature-icon-box feat-accent-4">
+                <i data-lucide="moon"></i>
+              </div>
+              <h3 class="feature-title">Warm Espresso Dark Mode</h3>
+              <p class="feature-desc">
+                Enjoy a peaceful reading sanctuary with warm beige and rich espresso palettes designed for easy reading at any hour.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Bottom Call To Action Banner -->
+      <section class="landing-cta-section">
+        <div class="landing-container">
+          <div class="landing-cta-box glass">
+            <div class="cta-badge">
+              <i data-lucide="book-open"></i>
+              <span>Ready for Shelf Control?</span>
+            </div>
+            <h2 class="cta-title">Start your cozy reading journey today</h2>
+            <p class="cta-subtitle">Free forever. No clutter, no complicated setups — just you and your books.</p>
+            <div class="cta-actions">
+              <button type="button" id="btn-bottom-signup" class="btn-primary animate-btn hero-cta-btn">
+                <span>Create Free Account</span>
+                <i data-lucide="arrow-right"></i>
+              </button>
+              <button type="button" id="btn-bottom-signin" class="btn-secondary animate-btn hero-secondary-btn">
+                <span>Sign In</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- Landing Footer -->
+    <footer class="landing-footer">
+      <div class="landing-container landing-footer-inner">
+        <div class="footer-brand">
+          <div class="logo-mark footer-logo-mark">
+            <i data-lucide="library" class="logo-icon"></i>
+          </div>
+          <span class="footer-brand-name">Shelf Control</span>
+        </div>
+        <p class="footer-copy">Crafted with ☕ and 📚 for people who romanticize their reading life.</p>
+      </div>
+    </footer>
+  </div>
+
   <!-- ONBOARDING / SIGNUP SCREEN -->
-  <div id="onboarding-screen" class="screen onboarding-active">
+  <div id="onboarding-screen" class="screen onboarding-hidden">
     <div class="onboarding-container glass">
-      <div class="brand">
+      <div class="onboarding-back-wrap">
+        <button type="button" id="btn-back-to-landing" class="btn-back-landing">
+          <i data-lucide="arrow-left"></i>
+          <span>Back to Home</span>
+        </button>
+      </div>
+
+      <div class="brand" id="onboarding-brand" style="cursor: pointer;" title="Back to Home">
         <div class="logo-mark">
           <i data-lucide="library" class="logo-icon"></i>
         </div>
@@ -42,6 +250,21 @@
       <p id="auth-error" class="auth-error hidden"></p>
 
       <form id="signin-form" class="signup-form auth-form">
+        <!-- Google Sign-In Button -->
+        <button type="button" id="btn-google-signin" class="btn-google-auth animate-btn">
+          <svg class="google-icon" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+            <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+            <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+            <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+            <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+          </svg>
+          <span class="btn-google-text">Continue with Google</span>
+        </button>
+
+        <div class="auth-divider">
+          <span>or</span>
+        </div>
+
         <div class="form-group">
           <label for="signin-email">Email</label>
           <input type="email" id="signin-email" placeholder="you@example.com" required autocomplete="email">
@@ -49,6 +272,9 @@
         <div class="form-group">
           <label for="signin-password">Password</label>
           <input type="password" id="signin-password" placeholder="Your password" required autocomplete="current-password" minlength="6">
+          <div class="forgot-password-link-wrap">
+            <button type="button" id="btn-forgot-password" class="link-forgot-password">Forgot Password?</button>
+          </div>
         </div>
         <button type="submit" class="btn-primary animate-btn" id="btn-signin">
           <span>Sign In</span>
@@ -57,6 +283,21 @@
       </form>
 
       <form id="signup-form" class="signup-form auth-form hidden">
+        <!-- Google Sign-In Button on Signup Tab -->
+        <button type="button" id="btn-google-signup" class="btn-google-auth animate-btn">
+          <svg class="google-icon" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+            <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+            <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+            <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+            <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+          </svg>
+          <span class="btn-google-text">Continue with Google</span>
+        </button>
+
+        <div class="auth-divider">
+          <span>or</span>
+        </div>
+
         <div class="form-group">
           <label for="signup-name">Display Name</label>
           <input type="text" id="signup-name" placeholder="What should we call you?" required autocomplete="name">
@@ -72,6 +313,56 @@
         <button type="submit" class="btn-primary animate-btn" id="btn-signup">
           <span>Create Account</span>
           <i data-lucide="arrow-right"></i>
+        </button>
+      </form>
+
+      <form id="forgot-password-form" class="signup-form auth-form hidden">
+        <div class="auth-form-header">
+          <h2 class="auth-form-title">Forgot Password</h2>
+          <p class="auth-form-subtitle">Enter your email and we'll send you a link to reset your password.</p>
+        </div>
+
+        <div id="forgot-fields">
+          <div class="form-group">
+            <label for="forgot-email">Email</label>
+            <input type="email" id="forgot-email" placeholder="you@example.com" required autocomplete="email">
+          </div>
+          <button type="submit" class="btn-primary animate-btn" id="btn-send-reset">
+            <span>Send Reset Link</span>
+            <i data-lucide="mail"></i>
+          </button>
+          <button type="button" class="btn-secondary animate-btn full-width" id="btn-cancel-forgot" style="margin-top: 8px;">
+            <span>Back to Sign In</span>
+          </button>
+        </div>
+
+        <div id="forgot-success-state" class="auth-success-state hidden">
+          <div class="auth-success-icon">
+            <i data-lucide="mail-check"></i>
+          </div>
+          <h3>Check your inbox</h3>
+          <p id="forgot-success-message">If an account is associated with that email, we've sent password reset instructions to your inbox.</p>
+          <button type="button" class="btn-secondary animate-btn full-width" id="btn-forgot-done" style="margin-top: 16px;">
+            <span>Return to Sign In</span>
+          </button>
+        </div>
+      </form>
+
+      <form id="reset-password-form" class="signup-form auth-form hidden">
+        <div class="form-group">
+          <label for="reset-password">New Password</label>
+          <input type="password" id="reset-password" placeholder="At least 6 characters" required autocomplete="new-password" minlength="6">
+        </div>
+        <div class="form-group">
+          <label for="reset-confirm-password">Confirm New Password</label>
+          <input type="password" id="reset-confirm-password" placeholder="Repeat new password" required autocomplete="new-password" minlength="6">
+        </div>
+        <button type="submit" class="btn-primary animate-btn" id="btn-reset-password">
+          <span>Update Password</span>
+          <i data-lucide="check"></i>
+        </button>
+        <button type="button" class="btn-secondary animate-btn full-width" id="btn-cancel-reset" style="margin-top: 8px;">
+          <span>Back to Sign In</span>
         </button>
       </form>
     </div>
@@ -107,6 +398,10 @@
         <button class="nav-item" data-view="profile">
           <i data-lucide="user"></i>
           <span>Profile</span>
+        </button>
+        <button class="nav-item" data-view="about">
+          <i data-lucide="info"></i>
+          <span>About</span>
         </button>
       </div>
     </nav>
@@ -333,20 +628,7 @@
             </div>
           </div>
 
-          <!-- Account & Follow Stats -->
-          <div class="account-follow-section glass">
-            <h3 class="section-mini-title">Social</h3>
-            <div class="follow-tabs">
-              <button class="follow-tab active" data-tab="followers">Followers <span id="profile-tab-followers-count" class="badge">0</span></button>
-              <button class="follow-tab" data-tab="following">Following <span id="profile-tab-following-count" class="badge">0</span></button>
-            </div>
-            <div id="followers-grid" class="follow-users-grid">
-              <!-- Follower cards rendered dynamically -->
-            </div>
-            <div id="following-grid" class="follow-users-grid hidden">
-              <!-- Following cards rendered dynamically -->
-            </div>
-          </div>
+
 
           <!-- Stats dashboard -->
           <div class="stats-dashboard">
@@ -510,6 +792,127 @@
               <i data-lucide="log-out"></i>
               <span>Sign Out</span>
             </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ABOUT VIEW -->
+      <section id="view-about" class="app-view">
+        <div class="about-page-wrapper">
+          <!-- Top Navigation / Back Bar -->
+          <div class="about-top-bar">
+            <button type="button" id="btn-back-about" class="btn-back-about animate-btn" title="Go Back">
+              <i data-lucide="arrow-left"></i>
+              <span id="back-about-text">Back</span>
+            </button>
+
+            <!-- Public Mode Action Buttons (Visible only when opened from public landing page) -->
+            <div id="about-public-actions" class="about-public-actions">
+              <button type="button" id="btn-about-signin" class="btn-secondary animate-btn btn-mini">
+                <span>Sign In</span>
+              </button>
+              <button type="button" id="btn-about-signup" class="btn-primary animate-btn btn-mini">
+                <span>Get Started</span>
+                <i data-lucide="arrow-right"></i>
+              </button>
+            </div>
+          </div>
+
+          <!-- About Header Banner -->
+          <header class="about-header-section">
+            <span class="about-eyebrow">
+              <i data-lucide="sparkles"></i>
+              <span>The reader behind the shelves</span>
+            </span>
+            <h1 class="about-main-title">A little about me</h1>
+            <p class="about-tagline">Thoughts, quiet corners, and the books that make life sweeter.</p>
+          </header>
+
+          <!-- Main About Body: Editorial Story + Scrapbook Collage -->
+          <div class="about-content-grid">
+            <!-- Left Column: Story & Notes -->
+            <div class="about-story-column">
+              <div class="about-journal-card glass">
+                
+                <!-- ABOUT TEXT: REPLACE THIS CONTENT WITH YOUR OWN INTRODUCTION -->
+                <div class="about-user-text">
+                  <p class="about-lead">
+                    Hi there! Welcome to my reading nook. I built Shelf Control because I needed a cozy, gentle corner of the internet where keeping track of books feels just as magical as diving into chapter one.
+                  </p>
+                  <p>
+                    I am one of those readers whose to-be-read list grows faster than any bookshelf can hold. I love morning coffee with a paperback, dog-eared bookmarks, scribbling small thoughts into page margins, and spending rainy afternoons lost in secondhand bookshops.
+                  </p>
+                  <p>
+                    Reading has always been my favorite way to slow down time. Whether it's literary fiction that breaks my heart, cozy fantasies that feel like a warm blanket, or poetry discovered on a quiet Sunday, every book is a small world I'm grateful to visit.
+                  </p>
+                </div>
+                <!-- END OF ABOUT TEXT -->
+
+                <!-- Decorative Reading Quote -->
+                <div class="about-quote-box">
+                  <div class="quote-mark">“</div>
+                  <p class="quote-content">I have always imagined that Paradise will be a kind of library.</p>
+                  <cite class="quote-author">— Jorge Luis Borges</cite>
+                </div>
+
+                <!-- Reading Habits Micro-Card -->
+                <div class="about-habits-card">
+                  <h3 class="habits-title">
+                    <i data-lucide="coffee"></i>
+                    <span>Reading Essentials</span>
+                  </h3>
+                  <ul class="habits-list">
+                    <li><span class="habit-bullet">☕</span> <strong>Fuel:</strong> Oat milk lattes & peppermint tea</li>
+                    <li><span class="habit-bullet">📚</span> <strong>Preferred formats:</strong> Floppy paperbacks & annotated margins</li>
+                    <li><span class="habit-bullet">🛋️</span> <strong>Favorite reading spot:</strong> The armchair beside the sunny window</li>
+                    <li><span class="habit-bullet">✨</span> <strong>Motto:</strong> <em>"Just one more chapter before bed."</em></li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+
+            <!-- Right Column: Aesthetic Scrapbook Photo Collage -->
+            <div class="about-collage-column">
+              <div class="scrapbook-collage">
+                
+                <!-- ABOUT IMAGES: REPLACE THESE TEMPORARY IMAGES -->
+                
+                <!-- Collage Image 1: Open Annotated Book -->
+                <figure class="collage-item collage-item-1">
+                  <div class="scrapbook-tape tape-top"></div>
+                  <div class="polaroid-frame">
+                    <img src="/about-book-open.jpg" alt="Open book with handwritten notes, morning tea, and glasses" class="collage-photo" />
+                    <figcaption class="polaroid-caption">Annotated pages & morning brew</figcaption>
+                  </div>
+                </figure>
+
+                <!-- Collage Image 2: Cozy Bookshelves -->
+                <figure class="collage-item collage-item-2">
+                  <div class="scrapbook-tape tape-right"></div>
+                  <div class="polaroid-frame">
+                    <img src="/about-bookshelf.jpg" alt="Cozy wooden bookshelves filled with books and plants" class="collage-photo" />
+                    <figcaption class="polaroid-caption">My little library in progress</figcaption>
+                  </div>
+                </figure>
+
+                <!-- Collage Image 3: Reading Sanctuary Nook -->
+                <figure class="collage-item collage-item-3">
+                  <div class="scrapbook-tape tape-left"></div>
+                  <div class="polaroid-frame">
+                    <img src="/hero-reading.jpg" alt="Cozy reading armchair with warm lamp and bookshelf" class="collage-photo" />
+                    <figcaption class="polaroid-caption">The favorite reading corner</figcaption>
+                  </div>
+                </figure>
+
+                <!-- END OF ABOUT IMAGES -->
+
+                <!-- Decorative Scrapbook Stamp / Sticker -->
+                <div class="collage-sticker glass">
+                  <i data-lucide="sparkles"></i>
+                  <span>Shelf Control ✨</span>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </section>
